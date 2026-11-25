@@ -20,3 +20,5 @@ __pycache__/
 *.log
 *.tmp
 .DS_Store
+# Fetched third-party components (pinned by tools/fetch_components.sh)
+/components/

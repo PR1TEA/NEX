@@ -1,0 +1,9 @@
+## NEX firmware dependencies.
+##
+## LVGL is fetched by the ESP-IDF component manager and pinned to an exact
+## version. M5GFX is intentionally NOT listed here: it is fetched at a pinned
+## tag into components/ by tools/fetch_components.sh (the registry package is
+## a different, newer line than the one validated on this hardware).
+dependencies:
+  idf: ">=5.5"
+  lvgl/lvgl: "9.5.0"
