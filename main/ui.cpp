@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
@@ -32,6 +33,13 @@ constexpr uint32_t kBufLines = 40;
 SemaphoreHandle_t s_lvgl_mutex = nullptr;
 lv_obj_t *s_status_label = nullptr;
 bool s_touch_ok = false;
+
+// Status strings produced by other tasks (e.g. the key scanner) are queued
+// here and applied by the UI task, never from the producer's context.
+struct StatusMessage {
+    char text[48];
+};
+QueueHandle_t s_status_queue = nullptr;
 
 void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
@@ -86,6 +94,12 @@ void ui_task(void *arg)
     (void)arg;
     while (true) {
         if (xSemaphoreTake(s_lvgl_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            StatusMessage msg;
+            while (xQueueReceive(s_status_queue, &msg, 0) == pdTRUE) {
+                if (s_status_label != nullptr) {
+                    lv_label_set_text(s_status_label, msg.text);
+                }
+            }
             lv_timer_handler();
             xSemaphoreGive(s_lvgl_mutex);
         }
@@ -237,6 +251,12 @@ bool ui_start()
         return false;
     }
 
+    s_status_queue = xQueueCreate(8, sizeof(StatusMessage));
+    if (s_status_queue == nullptr) {
+        ESP_LOGE(TAG, "status queue creation failed");
+        return false;
+    }
+
     build_ui();
 
     if (xTaskCreate(ui_task, "nex_ui", 8 * 1024, nullptr, 5, nullptr) != pdPASS) {
@@ -245,6 +265,16 @@ bool ui_start()
     }
 
     return true;
+}
+
+void ui_post_status(const char *text)
+{
+    if (s_status_queue == nullptr || text == nullptr) {
+        return;
+    }
+    StatusMessage msg = {};
+    std::snprintf(msg.text, sizeof(msg.text), "%s", text);
+    xQueueSend(s_status_queue, &msg, 0);
 }
 
 }  // namespace nex

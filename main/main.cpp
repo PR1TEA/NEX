@@ -8,6 +8,7 @@
 #include <freertos/task.h>
 
 #include "board.h"
+#include "keys.h"
 #include "ui.h"
 
 static const char *TAG = "NEX";
@@ -26,6 +27,10 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "UI init failed - system halted");
         vTaskDelay(portMAX_DELAY);
         return;
+    }
+
+    if (!nex::keys_start()) {
+        ESP_LOGE(TAG, "physical key init failed");
     }
 
     ESP_LOGI(TAG, "UI running");

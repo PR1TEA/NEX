@@ -4,6 +4,7 @@ idf_component_register(
         "main.cpp"
         "board.cpp"
         "ui.cpp"
+        "keys.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES
