@@ -42,6 +42,8 @@ const ACT_OPEN_STOPWATCH: i32 = 10;
 const ACT_OPEN_MENU: i32 = 11;
 const ACT_STOPWATCH_START: i32 = 12;
 const ACT_STOPWATCH_PAUSE: i32 = 13;
+const ACT_THEME_PREV: i32 = 14;
+const ACT_THEME_NEXT: i32 = 15;
 
 // -------------------------------------------------------------------- keys
 const KEY_A_CLICK: i32 = 1;
@@ -171,6 +173,7 @@ struct Core {
     error: [u8; 96],
     initialized: bool,
     stopwatch: Stopwatch,
+    theme: i32,
 }
 
 impl Default for Core {
@@ -187,6 +190,7 @@ impl Default for Core {
             error: [0u8; 96],
             initialized: false,
             stopwatch: Stopwatch::default(),
+            theme: 0,
         }
     }
 }
@@ -278,6 +282,7 @@ impl Core {
         self.settings_parent = PAGE_WATCHFACE;
         self.dev_enabled = false;
         self.running_app = -1;
+        self.theme = 0;
         self.initialized = true;
     }
 
@@ -429,6 +434,8 @@ impl Core {
                 let now = unsafe { nex_monotonic_ms() };
                 self.stopwatch.stop(now);
             }
+            ACT_THEME_PREV => self.theme = (self.theme + 3) % 4,
+            ACT_THEME_NEXT => self.theme = (self.theme + 1) % 4,
             ACT_OPEN_STOPWATCH => self.open(PAGE_STOPWATCH),
             ACT_OPEN_MENU => self.open(PAGE_MENU),
             _ => {}
@@ -440,6 +447,8 @@ impl Core {
             KEY_A_CLICK => {
                 if self.page == PAGE_STOPWATCH {
                     self.action(ACT_STOPWATCH_PAUSE, 0);
+                } else if self.page == PAGE_GYRO {
+                    self.action(ACT_THEME_PREV, 0);
                 } else {
                     self.action(ACT_UP, 0);
                 }
@@ -447,6 +456,8 @@ impl Core {
             KEY_B_CLICK => {
                 if self.page == PAGE_STOPWATCH {
                     self.action(ACT_STOPWATCH_START, 0);
+                } else if self.page == PAGE_GYRO {
+                    self.action(ACT_THEME_NEXT, 0);
                 } else {
                     self.action(ACT_DOWN, 0);
                 }
@@ -616,6 +627,11 @@ pub extern "C" fn nex_core_page() -> i32 {
 #[no_mangle]
 pub extern "C" fn nex_core_selection() -> i32 {
     lock().selection
+}
+
+#[no_mangle]
+pub extern "C" fn nex_core_theme() -> i32 {
+    lock().theme
 }
 
 #[no_mangle]

@@ -52,6 +52,8 @@ typedef enum {
     NEX_ACT_OPEN_MENU = 11,
     NEX_ACT_STOPWATCH_START = 12,
     NEX_ACT_STOPWATCH_PAUSE = 13,
+    NEX_ACT_THEME_PREV = 14,
+    NEX_ACT_THEME_NEXT = 15,
 } nex_action_t;
 
 typedef enum {
@@ -110,6 +112,7 @@ void nex_core_action(int32_t action, int32_t arg);
 int32_t nex_core_page(void);
 int32_t nex_core_selection(void);
 int32_t nex_core_dev_enabled(void);
+int32_t nex_core_theme(void);
 int32_t nex_core_clock_valid(void);
 int32_t nex_core_clock_source(void);
 int32_t nex_core_api_version(void);

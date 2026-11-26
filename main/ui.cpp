@@ -68,11 +68,115 @@ lv_obj_t *s_sw_state = nullptr;
 
 // App menu / level
 lv_obj_t *s_menu_rows[4] = {};
-lv_obj_t *s_att_horizon = nullptr;
-lv_obj_t *s_att_cross_h = nullptr;
-lv_obj_t *s_att_cross_v = nullptr;
-lv_obj_t *s_gyro_label = nullptr;
-lv_point_precise_t s_horizon_pts[2] = {{20, 120}, {220, 120}};
+lv_obj_t *s_att_canvas = nullptr;
+uint16_t *s_att_buf = nullptr;
+int s_att_theme = -1;
+lv_obj_t *s_aircraft[3] = {};
+lv_obj_t *s_bank_marker = nullptr;
+lv_point_precise_t s_bank_pts[9][2];
+lv_point_precise_t s_bank_marker_pts[2] = {{125, 125}, {125, 125}};
+
+struct AttPalette {
+    uint32_t sky;
+    uint32_t ground;
+    uint32_t horizon;
+    uint32_t ladder;
+    uint32_t aircraft;
+    uint32_t bank;
+};
+const AttPalette kAttPalettes[4] = {
+    {0x2E6FD6, 0x7A4B2A, 0xFFFFFF, 0xFFFFFF, 0xFFD24A, 0xFFFFFF},
+    {0x0B2A4A, 0x2A1A0A, 0x9CCBFF, 0x9CCBFF, 0xFFB020, 0x9CCBFF},
+    {0x101010, 0x2A2A2A, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF},
+    {0x0060A0, 0xA05000, 0xFFFFFF, 0xFFFFFF, 0xFF4040, 0xFFFFFF},
+};
+
+uint16_t rgb565(uint32_t color)
+{
+    const uint8_t r = (color >> 16) & 0xFF;
+    const uint8_t g = (color >> 8) & 0xFF;
+    const uint8_t b = color & 0xFF;
+    return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
+void draw_attitude(float roll, float pitch, int theme)
+{
+    if (s_att_buf == nullptr) {
+        return;
+    }
+    const AttPalette &palette = kAttPalettes[theme & 3];
+    const uint16_t sky = rgb565(palette.sky);
+    const uint16_t ground = rgb565(palette.ground);
+    const uint16_t horizon = rgb565(palette.horizon);
+    const uint16_t ladder = rgb565(palette.ladder);
+
+    constexpr int kW = 220;
+    constexpr int kH = 220;
+    constexpr int kC = 110;
+    constexpr float kRadius2 = 108.0f * 108.0f;
+    const float rad = roll * 0.0174533f;
+    const float sr = std::sin(rad);
+    const float cr = std::cos(rad);
+    const float pitch_px = pitch * 2.0f;
+
+    for (int y = 0; y < kH; ++y) {
+        const float dy = static_cast<float>(y - kC);
+        for (int x = 0; x < kW; ++x) {
+            const float dx = static_cast<float>(x - kC);
+            if (dx * dx + dy * dy > kRadius2) {
+                s_att_buf[y * kW + x] = 0;
+                continue;
+            }
+            const float d = dx * (-sr) + dy * cr - pitch_px;
+            s_att_buf[y * kW + x] = d < 0.0f ? sky : ground;
+        }
+    }
+
+    auto put = [&](int x, int y, uint16_t color) {
+        if (x >= 0 && x < kW && y >= 0 && y < kH) {
+            const float dx = static_cast<float>(x - kC);
+            const float dy = static_cast<float>(y - kC);
+            if (dx * dx + dy * dy <= kRadius2) {
+                s_att_buf[y * kW + x] = color;
+            }
+        }
+    };
+
+    if (std::fabs(cr) > 0.05f) {
+        for (int dx = -105; dx <= 105; ++dx) {
+            const float dy = (pitch_px + static_cast<float>(dx) * sr) / cr;
+            const int x = kC + dx;
+            const int y = static_cast<int>(std::lround(static_cast<float>(kC) + dy));
+            put(x, y, horizon);
+            put(x, y + 1, horizon);
+        }
+    }
+
+    for (int offset = -40; offset <= 40; offset += 20) {
+        if (offset == 0) {
+            continue;
+        }
+        const float bx = static_cast<float>(offset) * (-sr);
+        const float by = static_cast<float>(offset) * cr;
+        for (int t = -40; t <= 40; ++t) {
+            if (t > -12 && t < 12) {
+                continue;
+            }
+            const int x = static_cast<int>(std::lround(kC + bx + static_cast<float>(t) * cr));
+            const int y = static_cast<int>(std::lround(kC + by + static_cast<float>(t) * sr));
+            put(x, y, ladder);
+        }
+    }
+
+    if (s_att_canvas != nullptr) {
+        lv_obj_invalidate(s_att_canvas);
+    }
+}
+
+AttPalette palette_for(int theme)
+{
+    return kAttPalettes[theme & 3];
+}
 
 // Settings / developer / apps rows
 lv_obj_t *s_settings_rows[4] = {};
@@ -535,49 +639,62 @@ void build_gyro()
     lv_obj_set_style_pad_all(ring, 0, 0);
     lv_obj_remove_flag(ring, LV_OBJ_FLAG_SCROLLABLE);
 
-    s_att_horizon = lv_line_create(ring);
-    lv_obj_set_pos(s_att_horizon, 0, 0);
-    lv_line_set_points(s_att_horizon, s_horizon_pts, 2);
-    lv_obj_set_style_line_width(s_att_horizon, 3, 0);
-    lv_obj_set_style_line_color(s_att_horizon, lv_color_white(), 0);
-    lv_obj_set_style_line_rounded(s_att_horizon, true, 0);
+    s_att_buf = static_cast<uint16_t *>(heap_caps_malloc(220 * 220 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (s_att_buf != nullptr) {
+        std::memset(s_att_buf, 0, 220 * 220 * 2);
+        s_att_canvas = lv_canvas_create(ring);
+        lv_canvas_set_buffer(s_att_canvas, s_att_buf, 220, 220, LV_COLOR_FORMAT_RGB565);
+        lv_obj_center(s_att_canvas);
+        lv_obj_set_style_border_width(s_att_canvas, 0, 0);
+    }
 
-    static lv_point_precise_t cross_h[2] = {{105, 125}, {145, 125}};
-    static lv_point_precise_t cross_v[2] = {{125, 105}, {125, 145}};
-    s_att_cross_h = lv_line_create(ring);
-    lv_obj_set_pos(s_att_cross_h, 0, 0);
-    lv_line_set_points(s_att_cross_h, cross_h, 2);
-    lv_obj_set_style_line_width(s_att_cross_h, 2, 0);
-    lv_obj_set_style_line_color(s_att_cross_h, lv_color_hex(0xFFB020), 0);
-    lv_obj_set_style_line_rounded(s_att_cross_h, true, 0);
+    static lv_point_precise_t left_pts[2] = {{58, 125}, {105, 125}};
+    static lv_point_precise_t right_pts[2] = {{145, 125}, {192, 125}};
+    static lv_point_precise_t dot_pts[2] = {{119, 125}, {131, 125}};
+    lv_point_precise_t *aircraft_pts[3] = {left_pts, right_pts, dot_pts};
+    for (int i = 0; i < 3; ++i) {
+        s_aircraft[i] = lv_line_create(ring);
+        lv_obj_set_pos(s_aircraft[i], 0, 0);
+        lv_line_set_points(s_aircraft[i], aircraft_pts[i], 2);
+        lv_obj_set_style_line_width(s_aircraft[i], i == 2 ? 6 : 4, 0);
+        lv_obj_set_style_line_color(s_aircraft[i], lv_color_hex(0xFFD24A), 0);
+        lv_obj_set_style_line_rounded(s_aircraft[i], true, 0);
+    }
 
-    s_att_cross_v = lv_line_create(ring);
-    lv_obj_set_pos(s_att_cross_v, 0, 0);
-    lv_line_set_points(s_att_cross_v, cross_v, 2);
-    lv_obj_set_style_line_width(s_att_cross_v, 2, 0);
-    lv_obj_set_style_line_color(s_att_cross_v, lv_color_hex(0xFFB020), 0);
-    lv_obj_set_style_line_rounded(s_att_cross_v, true, 0);
+    static const int bank_angles[9] = {-45, -30, -20, -10, 0, 10, 20, 30, 45};
+    for (int i = 0; i < 9; ++i) {
+        const float angle = static_cast<float>(bank_angles[i]) * 0.0174533f;
+        const float inner = 100.0f;
+        const float outer = 110.0f;
+        s_bank_pts[i][0] = {static_cast<lv_value_precise_t>(125 + std::sin(angle) * inner),
+                            static_cast<lv_value_precise_t>(125 - std::cos(angle) * inner)};
+        s_bank_pts[i][1] = {static_cast<lv_value_precise_t>(125 + std::sin(angle) * outer),
+                            static_cast<lv_value_precise_t>(125 - std::cos(angle) * outer)};
+        lv_obj_t *tick = lv_line_create(ring);
+        lv_obj_set_pos(tick, 0, 0);
+        lv_line_set_points(tick, s_bank_pts[i], 2);
+        lv_obj_set_style_line_width(tick, 2, 0);
+        lv_obj_set_style_line_color(tick, lv_color_hex(0xFFFFFF), 0);
+    }
 
-    s_gyro_label = lv_label_create(page);
-    lv_obj_set_width(s_gyro_label, 420);
-    lv_obj_set_style_text_align(s_gyro_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(s_gyro_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_gyro_label, lv_color_hex(0x9A9AA2), 0);
-    lv_obj_align(s_gyro_label, LV_ALIGN_CENTER, 0, 100);
-    lv_label_set_text(s_gyro_label, "ROLL +0   PITCH +0");
+    s_bank_marker = lv_line_create(ring);
+    lv_obj_set_pos(s_bank_marker, 0, 0);
+    lv_line_set_points(s_bank_marker, s_bank_marker_pts, 2);
+    lv_obj_set_style_line_width(s_bank_marker, 3, 0);
+    lv_obj_set_style_line_color(s_bank_marker, lv_color_hex(0xFFD24A), 0);
 
     lv_obj_t *back = lv_button_create(page);
     lv_obj_set_size(back, 150, 50);
     lv_obj_align(back, LV_ALIGN_BOTTOM_MID, 0, -20);
-    lv_obj_set_style_radius(back, 12, 0);
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x0D0D0D), 0);
+    lv_obj_set_style_radius(back, 25, 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(0x141414), 0);
     lv_obj_set_style_border_width(back, 1, 0);
-    lv_obj_set_style_border_color(back, lv_color_hex(0x333333), 0);
+    lv_obj_set_style_border_color(back, lv_color_hex(0x3A3A3A), 0);
     lv_obj_add_event_cb(back, row_event_cb, LV_EVENT_CLICKED,
                         reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_BACK * 1000)));
     lv_obj_t *label = lv_label_create(back);
-    lv_label_set_text(label, "Back");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    lv_label_set_text(label, "返回");
+    lv_obj_set_style_text_font(label, &nex_cjk_16, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_center(label);
 }
@@ -890,32 +1007,34 @@ void refresh_gyro()
 {
     float ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
     if (!imu_read(ax, ay, az, gx, gy, gz)) {
-        set_text_if_changed(s_gyro_label, "IMU NOT AVAILABLE");
         return;
     }
 
-    // Panel-mounted axes: X/Y are swapped and inverted relative to the screen.
     const float screen_x = -ay;
     const float screen_y = -ax;
     const float roll = std::atan2(screen_x, az) * 57.2958f;
     const float pitch = std::atan2(screen_y, std::sqrt(screen_x * screen_x + az * az)) * 57.2958f;
 
-    const float rad = roll * 0.0174533f;
-    const float dx = std::cos(rad);
-    const float dy = std::sin(rad);
-    float cy = 125.0f + pitch * 1.8f;
-    if (cy < 35.0f) cy = 35.0f;
-    if (cy > 215.0f) cy = 215.0f;
-    s_horizon_pts[0].x = 125.0f - dx * 95.0f;
-    s_horizon_pts[0].y = cy - dy * 95.0f;
-    s_horizon_pts[1].x = 125.0f + dx * 95.0f;
-    s_horizon_pts[1].y = cy + dy * 95.0f;
-    lv_line_set_points(s_att_horizon, s_horizon_pts, 2);
+    const int theme = nex_core_theme();
+    if (theme != s_att_theme) {
+        s_att_theme = theme;
+        const AttPalette palette = palette_for(theme);
+        for (auto *line : s_aircraft) {
+            lv_obj_set_style_line_color(line, lv_color_hex(palette.aircraft), 0);
+        }
+        if (s_bank_marker != nullptr) {
+            lv_obj_set_style_line_color(s_bank_marker, lv_color_hex(palette.bank), 0);
+        }
+    }
 
-    char buffer[96];
-    std::snprintf(buffer, sizeof(buffer), "横滚 %+.0f   俯仰 %+.0f\nGZ %+.0f dps",
-                  (double)roll, (double)pitch, (double)gz);
-    set_text_if_changed(s_gyro_label, buffer);
+    draw_attitude(roll, pitch, theme);
+
+    const float angle = roll * 0.0174533f;
+    s_bank_marker_pts[0].x = static_cast<lv_value_precise_t>(125 + std::sin(angle) * 92.0f);
+    s_bank_marker_pts[0].y = static_cast<lv_value_precise_t>(125 - std::cos(angle) * 92.0f);
+    s_bank_marker_pts[1].x = static_cast<lv_value_precise_t>(125 + std::sin(angle) * 106.0f);
+    s_bank_marker_pts[1].y = static_cast<lv_value_precise_t>(125 - std::cos(angle) * 106.0f);
+    lv_line_set_points(s_bank_marker, s_bank_marker_pts, 2);
 }
 
 void refresh_stopwatch()
