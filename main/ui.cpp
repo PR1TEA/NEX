@@ -61,7 +61,6 @@ lv_obj_t *s_time_s = nullptr;
 lv_obj_t *s_time_invalid = nullptr;
 lv_point_precise_t s_wf_hour_pts[2] = {{230, 230}, {230, 120}};
 lv_point_precise_t s_wf_min_pts[2] = {{230, 230}, {230, 80}};
-lv_point_precise_t s_wf_sec_pts[2] = {{230, 230}, {230, 45}};
 lv_point_precise_t s_wf_tick_pts[60][2];
 
 // Stopwatch
@@ -571,7 +570,6 @@ void build_watchface()
     };
     s_time_h = make_hand(s_wf_hour_pts, 9, lv_color_white());
     s_time_m = make_hand(s_wf_min_pts, 6, lv_color_white());
-    s_time_s = make_hand(s_wf_sec_pts, 2, lv_color_hex(0xFFB020));
 
     lv_obj_t *cap = lv_obj_create(dial);
     lv_obj_set_size(cap, 14, 14);
@@ -1030,18 +1028,22 @@ void refresh_watchface()
     if (invalid) {
         lv_obj_add_flag(s_time_h, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_time_m, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_time_s, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(s_time_invalid, LV_OBJ_FLAG_HIDDEN);
         return;
     }
+    char hour_minute[5] = {digits[0], digits[1], digits[2], digits[3], 0};
+    static char last_hour_minute[5] = "";
+    if (std::strcmp(hour_minute, last_hour_minute) == 0) {
+        return;
+    }
+    std::snprintf(last_hour_minute, sizeof(last_hour_minute), "%s", hour_minute);
+
     lv_obj_remove_flag(s_time_h, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_time_m, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(s_time_s, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_time_invalid, LV_OBJ_FLAG_HIDDEN);
 
     const float hour = (digits[0] - '0') * 10 + (digits[1] - '0');
     const float minute = (digits[2] - '0') * 10 + (digits[3] - '0');
-    const float second = (digits[4] - '0') * 10 + (digits[5] - '0');
     constexpr float kPi = 3.14159265f;
     constexpr float kCenter = 230.0f;
 
@@ -1054,8 +1056,7 @@ void refresh_watchface()
         lv_line_set_points(hand, points, 2);
     };
     set_hand(s_wf_hour_pts, s_time_h, (hour + minute / 60.0f) * 30.0f, 105.0f);
-    set_hand(s_wf_min_pts, s_time_m, (minute + second / 60.0f) * 6.0f, 150.0f);
-    set_hand(s_wf_sec_pts, s_time_s, second * 6.0f, 185.0f);
+    set_hand(s_wf_min_pts, s_time_m, minute * 6.0f, 150.0f);
 }
 
 void refresh_menu()
