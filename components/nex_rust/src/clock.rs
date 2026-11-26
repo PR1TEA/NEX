@@ -1,6 +1,6 @@
 /*
  * NEX Rust core — civil time maths and clock state
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * The core keeps UTC internally; the UI applies the user timezone offset only
  * when formatting. Monotonic milliseconds drive elapsed time, never wall time.

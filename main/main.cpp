@@ -1,6 +1,6 @@
 /*
  * NEX firmware — entry point
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include <esp_log.h>
 #include <esp_system.h>

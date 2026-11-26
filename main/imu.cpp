@@ -1,6 +1,6 @@
 /*
  * NEX firmware — BMI270 IMU service
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * The IMU sits on the shared system I2C bus at 0x68 (3V3_L2).
  */

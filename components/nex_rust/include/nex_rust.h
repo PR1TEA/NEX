@@ -1,6 +1,6 @@
 /*
  * NEX Rust core — C ABI boundary
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Keep this header in sync with components/nex_rust/src/lib.rs.
  * Only fixed-width integers and NUL-terminated strings cross the boundary.

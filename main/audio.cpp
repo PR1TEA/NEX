@@ -1,6 +1,6 @@
 /*
  * NEX firmware — ES8311 speaker output
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * I2S pins confirmed from the M5Stack StopWatch user demo:
  * MCLK 18, BCLK 17, LRCK 15, DAC out 21. The AW8737A amplifier has no

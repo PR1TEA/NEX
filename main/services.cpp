@@ -1,6 +1,6 @@
 /*
  * NEX firmware — system services (C++ side of the Rust core ABI)
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * - RX8130CE access over the existing system I2C bus (0x32)
  * - NVS blob storage for the Rust settings structure

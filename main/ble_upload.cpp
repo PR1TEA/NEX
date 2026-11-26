@@ -1,6 +1,6 @@
 /*
  * NEX firmware — BLE wallpaper upload service
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Custom GATT service:
  *   control  (write)       0x01 + u32le length = START, 0x02 = COMMIT, 0x03 = ABORT

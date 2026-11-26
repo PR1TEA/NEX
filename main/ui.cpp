@@ -1,6 +1,6 @@
 /*
  * NEX firmware — system UI
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Rust owns page/selection/clock state; this file owns every LVGL object and
  * the UI task. Pages are created once at startup and toggled, so repeated

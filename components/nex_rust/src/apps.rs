@@ -1,6 +1,6 @@
 /*
  * NEX Rust core — built-in app registry
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Static built-in apps only. Compatibility is a simple API-version check; it
  * is not an ABI or memory-safety boundary.

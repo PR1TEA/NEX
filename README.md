@@ -2,7 +2,7 @@
 
 > **依旧，献给我最爱的人。**
 
-NEX 是一块为 M5Stack STOPWATCH（C152，ESP32-S3）重写的固件，以及配套的 Android 应用 **NEX_Connect**。它不是一块只会看时间的表：模拟表盘、秒表、姿态仪、倒计时、提醒事项、手机校时与壁纸上传，全部围绕“每天真的会用”来设计。
+NEX 是为 M5Stack STOPWATCH（C152，ESP32-S3）编写的固件，以及配套的 Android 应用 **NEX_Connect**。功能包括模拟表盘、秒表、姿态仪、倒计时、提醒事项、手机校时与壁纸上传。
 
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.5.4-red?logo=espressif)
 ![ESP32-S3](https://img.shields.io/badge/ESP32--S3-240%20MHz-blue)
@@ -10,13 +10,13 @@ NEX 是一块为 M5Stack STOPWATCH（C152，ESP32-S3）重写的固件，以及�
 ![Rust](https://img.shields.io/badge/Rust-xtensa-orange?logo=rust)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-purple?logo=kotlin)
 ![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-green?logo=jetpackcompose)
-![License](https://img.shields.io/badge/license-MIT%20%2F%20GPL--3.0-lightgrey)
+![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
 ## 功能
 
 - **模拟表盘**：传统刻度、时针/分针、壁纸背景，底部低调电量显示（白色 / 低于 20% 黄色 / 充电闪电徽标）。
 - **秒表**：KEYB 开始/继续，KEYA 暂停，触摸归零。
-- **姿态仪**：Garmin 风格人工地平线、俯仰梯、坡度刻度，KEYA/KEYB 切换配色。
+- **姿态仪**：人工地平线、俯仰梯、坡度刻度，KEYA/KEYB 切换配色。
 - **提醒事项**：手机推送单条到手表，手表端只保留清单；选中后双击 A+B 永久删除。
 - **倒计时**：`+10秒` / `+1分`、开始/暂停、归零；到点扬声器蜂鸣，按键或超时自动停止。
 - **手机联动（BLE）**：
@@ -125,7 +125,7 @@ tools/               外部组件拉取等工具脚本
 
 ## 版权与许可证
 
-- 固件（`main/`、`components/nex_rust/` 等）：**MIT License**，见根目录 `LICENSE`。
+- 固件（`main/`、`components/nex_rust/` 等）：**GNU General Public License v3.0**，见根目录 `LICENSE`。
 - Android 应用（`android/NEX_Connect/`）：**GNU General Public License v3.0**，见 `android/NEX_Connect/LICENSE`。
 - 第三方组件（ESP-IDF、LVGL、M5GFX、M5Unified 参考、Jetpack Compose 等）遵循各自许可证。
 - Copyright © 2026 **PR1TEA**. 保留所有权利。

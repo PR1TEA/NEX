@@ -1,6 +1,6 @@
 /*
  * NEX firmware — board support
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * M5Stack STOPWATCH C152 board bring-up:
  *   - system I2C on GPIO47/48

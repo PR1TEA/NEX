@@ -1,6 +1,6 @@
 /*
  * NEX firmware — board support
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Register-level facts in this file are derived from the M5Stack STOPWATCH
  * (C152) schematic, the M5PM1 / M5IOE1 datasheets, and the MIT-licensed

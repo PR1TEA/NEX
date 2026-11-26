@@ -1,6 +1,6 @@
 /*
  * NEX firmware — reminders (checklist) storage
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Reminders are stored as JSON in /spiffs/reminders.json and synced with the
  * phone over BLE. The device is the source of truth for `done`.

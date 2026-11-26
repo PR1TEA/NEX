@@ -1,6 +1,6 @@
 /*
  * NEX system core — C ABI boundary between Rust and C++
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Rust owns: clock policy, settings values, navigation, app registry and
  * compatibility checks.

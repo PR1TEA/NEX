@@ -1,6 +1,6 @@
 /*
  * NEX firmware — wallpaper storage
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * JPEG files uploaded over BLE are stored in the SPIFFS "storage" partition
  * and decoded by LVGL (tjpgd) for the watchface background.

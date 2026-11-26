@@ -1,6 +1,6 @@
 /*
  * NEX firmware — system services interface
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #pragma once
 

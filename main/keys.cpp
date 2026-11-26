@@ -1,6 +1,6 @@
 /*
  * NEX firmware — physical keys (KEYA / KEYB)
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * KEYA = GPIO2, KEYB = GPIO1, both active low with internal pull-ups
  * (M5StopWatch-UserDemo 0.5, main/hal/hal_button.cpp).
