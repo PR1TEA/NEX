@@ -6,6 +6,8 @@
 # depends on the whole src/ directory, so editing or adding Rust files makes
 # `idf.py build` rebuild the library; Cargo itself is incremental.
 
+file(GLOB_RECURSE NEX_RUST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.rs")
+
 set(NEX_RUST_TARGET "xtensa-esp32s3-espidf")
 set(NEX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/target")
 set(NEX_RUST_LIB "${NEX_RUST_TARGET_DIR}/${NEX_RUST_TARGET}/release/libnex_rust.a")
@@ -33,7 +35,7 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
                 "${NEX_CARGO_EXECUTABLE}" build --release --locked --target ${NEX_RUST_TARGET}
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         DEPENDS
-            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+            ${NEX_RUST_SOURCES}
             "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml"
             "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.lock"
             "${CMAKE_CURRENT_SOURCE_DIR}/rust-toolchain.toml"

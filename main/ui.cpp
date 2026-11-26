@@ -39,7 +39,7 @@ namespace {
 
 constexpr const char *TAG = "NEX-UI";
 
-constexpr int kPageCount = 8;
+constexpr int kPageCount = 9;
 constexpr uint32_t kTickMs = 20;
 
 SemaphoreHandle_t s_lvgl_mutex = nullptr;
@@ -53,6 +53,10 @@ lv_obj_t *s_time_h = nullptr;
 lv_obj_t *s_time_m = nullptr;
 lv_obj_t *s_time_s = nullptr;
 lv_obj_t *s_time_invalid = nullptr;
+
+// Stopwatch
+lv_obj_t *s_sw_time = nullptr;
+lv_obj_t *s_sw_state = nullptr;
 
 // Settings / developer / apps rows
 lv_obj_t *s_settings_rows[4] = {};
@@ -152,6 +156,8 @@ const char *page_title(int32_t page)
             return "INPUT EVENTS";
         case NEX_PAGE_APPS:
             return "BUILT-IN APPS";
+        case NEX_PAGE_STOPWATCH:
+            return "STOPWATCH";
         default:
             return page_name(page);
     }
@@ -378,9 +384,22 @@ void cancel_event_cb(lv_event_t *event)
 }
 
 // ------------------------------------------------------------------- pages
+void watchface_click_cb(lv_event_t *event)
+{
+    if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
+        return;
+    }
+    if (nex_core_page() != NEX_PAGE_WATCHFACE) {
+        return;
+    }
+    nex_core_action(NEX_ACT_OPEN_STOPWATCH, 0);
+    ui_sync();
+}
+
 void build_watchface()
 {
     lv_obj_t *page = s_pages[NEX_PAGE_WATCHFACE];
+    lv_obj_add_event_cb(page, watchface_click_cb, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *row = lv_obj_create(page);
     lv_obj_set_size(row, 460, 90);
@@ -417,10 +436,47 @@ void build_watchface()
     lv_obj_add_flag(s_time_invalid, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *hint = lv_label_create(page);
-    lv_label_set_text(hint, "HOLD KEYB: SETTINGS");
+    lv_label_set_text(hint, "TAP: STOPWATCH   HOLD B: SETTINGS");
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x777777), 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -40);
+}
+
+void build_stopwatch()
+{
+    lv_obj_t *page = s_pages[NEX_PAGE_STOPWATCH];
+
+    s_sw_time = lv_label_create(page);
+    lv_label_set_text(s_sw_time, "00:00.0");
+    lv_obj_set_style_text_font(s_sw_time, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(s_sw_time, lv_color_white(), 0);
+    lv_obj_align(s_sw_time, LV_ALIGN_CENTER, 0, -60);
+
+    s_sw_state = lv_label_create(page);
+    lv_label_set_text(s_sw_state, "READY");
+    lv_obj_set_style_text_font(s_sw_state, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(s_sw_state, lv_color_hex(0x9A9AA2), 0);
+    lv_obj_align(s_sw_state, LV_ALIGN_CENTER, 0, 4);
+
+    auto make_button = [&](const char *text, int action, int x_ofs) {
+        lv_obj_t *button = lv_button_create(page);
+        lv_obj_set_size(button, 132, 56);
+        lv_obj_align(button, LV_ALIGN_BOTTOM_MID, x_ofs, -100);
+        lv_obj_set_style_radius(button, 12, 0);
+        lv_obj_set_style_bg_color(button, lv_color_hex(0x0D0D0D), 0);
+        lv_obj_set_style_border_width(button, 1, 0);
+        lv_obj_set_style_border_color(button, lv_color_hex(0x333333), 0);
+        lv_obj_add_event_cb(button, row_event_cb, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(action * 1000)));
+        lv_obj_t *label = lv_label_create(button);
+        lv_label_set_text(label, text);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(label, lv_color_white(), 0);
+        lv_obj_center(label);
+    };
+    make_button("Start/Stop", NEX_ACT_STOPWATCH_TOGGLE, -146);
+    make_button("Reset", NEX_ACT_STOPWATCH_RESET, 0);
+    make_button("Back", NEX_ACT_BACK, 146);
 }
 
 void build_settings()
@@ -711,6 +767,34 @@ void refresh_watchface()
     lv_label_set_text(s_time_s, part);
 }
 
+void refresh_stopwatch()
+{
+    static uint64_t last_tenth = ~0ull;
+    const uint64_t ms = nex_core_stopwatch_ms();
+    const uint64_t tenths = ms / 100;
+    if (tenths == last_tenth) {
+        return;
+    }
+    last_tenth = tenths;
+
+    const uint64_t hours = tenths / 36000;
+    const uint64_t minutes = (tenths / 600) % 60;
+    const uint64_t seconds = (tenths / 10) % 60;
+    const uint64_t fraction = tenths % 10;
+    char buffer[32];
+    if (hours > 0) {
+        std::snprintf(buffer, sizeof(buffer), "%llu:%02llu:%02llu.%llu",
+                      static_cast<unsigned long long>(hours), static_cast<unsigned long long>(minutes),
+                      static_cast<unsigned long long>(seconds), static_cast<unsigned long long>(fraction));
+    } else {
+        std::snprintf(buffer, sizeof(buffer), "%02llu:%02llu.%llu", static_cast<unsigned long long>(minutes),
+                      static_cast<unsigned long long>(seconds), static_cast<unsigned long long>(fraction));
+    }
+    set_text_if_changed(s_sw_time, buffer);
+    const char *state = nex_core_stopwatch_running() ? "RUNNING" : (ms == 0 ? "READY" : "STOPPED");
+    set_text_if_changed(s_sw_state, state);
+}
+
 void refresh_settings()
 {
     const int sel = nex_core_selection();
@@ -902,6 +986,9 @@ void refresh_page(int page)
         case NEX_PAGE_WATCHFACE:
             refresh_watchface();
             break;
+        case NEX_PAGE_STOPWATCH:
+            refresh_stopwatch();
+            break;
         case NEX_PAGE_SETTINGS:
             refresh_settings();
             break;
@@ -987,6 +1074,9 @@ void ui_task(void *arg)
             }
             if (s_current_page == NEX_PAGE_WATCHFACE) {
                 refresh_watchface();
+            }
+            if (s_current_page == NEX_PAGE_STOPWATCH) {
+                refresh_stopwatch();
             }
             lv_timer_handler();
             xSemaphoreGive(s_lvgl_mutex);
@@ -1076,6 +1166,7 @@ bool ui_start()
         s_pages[i] = make_page(i == NEX_PAGE_WATCHFACE ? nullptr : page_title(i));
     }
     build_watchface();
+    build_stopwatch();
     build_settings();
     build_time_editor();
     build_system_info();

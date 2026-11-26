@@ -24,6 +24,7 @@ typedef enum {
     NEX_PAGE_INPUT_DIAG = 5,
     NEX_PAGE_APPS = 6,
     NEX_PAGE_APP_RUNNER = 7,
+    NEX_PAGE_STOPWATCH = 8,
 } nex_page_t;
 
 typedef enum {
@@ -42,6 +43,9 @@ typedef enum {
     NEX_ACT_SELECT = 5, /* arg = item index */
     NEX_ACT_TOGGLE_DEV = 6,
     NEX_ACT_HOME = 7,
+    NEX_ACT_STOPWATCH_TOGGLE = 8,
+    NEX_ACT_STOPWATCH_RESET = 9,
+    NEX_ACT_OPEN_STOPWATCH = 10,
 } nex_action_t;
 
 typedef enum {
@@ -110,6 +114,8 @@ int32_t nex_core_set_time(int32_t year, int32_t month, int32_t day, int32_t hour
 /* Unified future time-source entry point. HardwareRtc/Manual are handled by
  * set_time(); Bluetooth/WiFi are reserved and return -1 (not implemented). */
 int32_t nex_core_sync_time(int32_t source);
+uint64_t nex_core_stopwatch_ms(void);
+int32_t nex_core_stopwatch_running(void);
 int32_t nex_core_app_count(void);
 int32_t nex_core_app_info(int32_t index, nex_app_info_t *out);
 int32_t nex_core_start_app(int32_t index);

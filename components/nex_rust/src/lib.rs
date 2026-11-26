@@ -13,7 +13,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 mod apps;
 mod clock;
 
-use clock::{Civil, Clock, SOURCE_MANUAL, SOURCE_NONE, SOURCE_RTC};
+use clock::{Civil, Clock, SOURCE_BLUETOOTH, SOURCE_MANUAL, SOURCE_NONE, SOURCE_RTC, SOURCE_WIFI};
 
 // ------------------------------------------------------------------- pages
 const PAGE_WATCHFACE: i32 = 0;
@@ -24,6 +24,7 @@ const PAGE_DEVELOPER: i32 = 4;
 const PAGE_INPUT_DIAG: i32 = 5;
 const PAGE_APPS: i32 = 6;
 const PAGE_APP_RUNNER: i32 = 7;
+const PAGE_STOPWATCH: i32 = 8;
 
 // ----------------------------------------------------------------- actions
 const ACT_UP: i32 = 1;
@@ -33,6 +34,9 @@ const ACT_BACK: i32 = 4;
 const ACT_SELECT: i32 = 5;
 const ACT_TOGGLE_DEV: i32 = 6;
 const ACT_HOME: i32 = 7;
+const ACT_STOPWATCH_TOGGLE: i32 = 8;
+const ACT_STOPWATCH_RESET: i32 = 9;
+const ACT_OPEN_STOPWATCH: i32 = 10;
 
 // -------------------------------------------------------------------- keys
 const KEY_A_CLICK: i32 = 1;
@@ -115,6 +119,40 @@ impl Default for Settings {
     }
 }
 
+#[derive(Default)]
+struct Stopwatch {
+    running: bool,
+    start_mono_ms: u64,
+    accumulated_ms: u64,
+}
+
+impl Stopwatch {
+    fn start(&mut self, now: u64) {
+        if !self.running {
+            self.running = true;
+            self.start_mono_ms = now;
+        }
+    }
+    fn stop(&mut self, now: u64) {
+        if self.running {
+            self.accumulated_ms = self.accumulated_ms.saturating_add(now.saturating_sub(self.start_mono_ms));
+            self.running = false;
+        }
+    }
+    fn reset(&mut self) {
+        self.running = false;
+        self.accumulated_ms = 0;
+        self.start_mono_ms = 0;
+    }
+    fn elapsed(&self, now: u64) -> u64 {
+        if self.running {
+            self.accumulated_ms.saturating_add(now.saturating_sub(self.start_mono_ms))
+        } else {
+            self.accumulated_ms
+        }
+    }
+}
+
 struct Core {
     page: i32,
     selection: i32,
@@ -125,6 +163,7 @@ struct Core {
     system_parent: i32,
     error: [u8; 96],
     initialized: bool,
+    stopwatch: Stopwatch,
 }
 
 impl Default for Core {
@@ -139,6 +178,7 @@ impl Default for Core {
             system_parent: PAGE_SETTINGS,
             error: [0u8; 96],
             initialized: false,
+            stopwatch: Stopwatch::default(),
         }
     }
 }
@@ -321,6 +361,7 @@ impl Core {
         let target = match self.page {
             PAGE_SETTINGS | PAGE_APP_RUNNER => PAGE_WATCHFACE,
             PAGE_TIME_EDITOR | PAGE_DEVELOPER => PAGE_SETTINGS,
+            PAGE_STOPWATCH => PAGE_WATCHFACE,
             PAGE_SYSTEM_INFO => self.system_parent,
             PAGE_INPUT_DIAG | PAGE_APPS => PAGE_DEVELOPER,
             _ => PAGE_WATCHFACE,
@@ -351,6 +392,16 @@ impl Core {
                 self.running_app = -1;
                 self.open(PAGE_WATCHFACE);
             }
+            ACT_STOPWATCH_TOGGLE => {
+                let now = unsafe { nex_monotonic_ms() };
+                if self.stopwatch.running {
+                    self.stopwatch.stop(now);
+                } else {
+                    self.stopwatch.start(now);
+                }
+            }
+            ACT_STOPWATCH_RESET => self.stopwatch.reset(),
+            ACT_OPEN_STOPWATCH => self.open(PAGE_STOPWATCH),
             _ => {}
         }
     }
@@ -598,6 +649,21 @@ pub extern "C" fn nex_core_sync_time(source: i32) -> i32 {
             -1
         }
         _ => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn nex_core_stopwatch_ms() -> u64 {
+    let core = lock();
+    core.stopwatch.elapsed(unsafe { nex_monotonic_ms() })
+}
+
+#[no_mangle]
+pub extern "C" fn nex_core_stopwatch_running() -> i32 {
+    if lock().stopwatch.running {
+        1
+    } else {
+        0
     }
 }
 
