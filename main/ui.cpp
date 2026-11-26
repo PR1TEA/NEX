@@ -76,6 +76,11 @@ lv_obj_t *s_sw_state = nullptr;
 // App menu / level
 lv_obj_t *s_menu_rows[6] = {};
 lv_obj_t *s_wallpaper = nullptr;
+lv_obj_t *s_battery_body = nullptr;
+lv_obj_t *s_battery_fill = nullptr;
+lv_obj_t *s_battery_text = nullptr;
+int s_battery_percent = -1;
+int64_t s_battery_last_read = 0;
 int s_wall_gen = -1;
 lv_obj_t *s_phone_status = nullptr;
 
@@ -636,6 +641,36 @@ bool load_wallpaper_bitmap()
     return true;
 }
 
+void refresh_battery(bool force)
+{
+    const int64_t now = esp_timer_get_time() / 1000;
+    if (!force && now - s_battery_last_read < 10000) {
+        return;
+    }
+    s_battery_last_read = now;
+    uint16_t millivolts = 0;
+    if (!board_battery_millivolts(millivolts)) {
+        return;
+    }
+    int percent = static_cast<int>((static_cast<int>(millivolts) - 3300) * 100 / 900);
+    percent = std::max(0, std::min(100, percent));
+    if (percent == s_battery_percent) {
+        return;
+    }
+    s_battery_percent = percent;
+    const uint32_t color = percent < 20 ? 0xFF3B30 : (percent < 50 ? 0xFFCC00 : 0x4CD964);
+    if (s_battery_fill != nullptr) {
+        lv_obj_set_width(s_battery_fill, 3 + (24 * percent) / 100);
+        lv_obj_set_style_bg_color(s_battery_fill, lv_color_hex(color), 0);
+    }
+    if (s_battery_text != nullptr) {
+        char buffer[8];
+        std::snprintf(buffer, sizeof(buffer), "%d%%", percent);
+        set_text_if_changed(s_battery_text, buffer);
+        lv_obj_set_style_text_color(s_battery_text, lv_color_hex(color), 0);
+    }
+}
+
 void build_watchface()
 {
     lv_obj_t *page = s_pages[NEX_PAGE_WATCHFACE];
@@ -647,6 +682,31 @@ void build_watchface()
     } else {
         lv_obj_add_flag(s_wallpaper, LV_OBJ_FLAG_HIDDEN);
     }
+
+    s_battery_body = lv_obj_create(page);
+    lv_obj_set_size(s_battery_body, 34, 16);
+    lv_obj_align(s_battery_body, LV_ALIGN_BOTTOM_MID, -24, -58);
+    lv_obj_set_style_radius(s_battery_body, 3, 0);
+    lv_obj_set_style_bg_opa(s_battery_body, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_battery_body, 2, 0);
+    lv_obj_set_style_border_color(s_battery_body, lv_color_hex(0x8A8A90), 0);
+    lv_obj_set_style_pad_all(s_battery_body, 0, 0);
+    lv_obj_remove_flag(s_battery_body, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_battery_fill = lv_obj_create(s_battery_body);
+    lv_obj_set_size(s_battery_fill, 3, 8);
+    lv_obj_align(s_battery_fill, LV_ALIGN_LEFT_MID, 3, 0);
+    lv_obj_set_style_radius(s_battery_fill, 1, 0);
+    lv_obj_set_style_bg_color(s_battery_fill, lv_color_hex(0xB8B8BE), 0);
+    lv_obj_set_style_bg_opa(s_battery_fill, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_battery_fill, 0, 0);
+
+    s_battery_text = lv_label_create(page);
+    lv_label_set_text(s_battery_text, "--%");
+    lv_obj_set_style_text_font(s_battery_text, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_battery_text, lv_color_hex(0x8A8A90), 0);
+    lv_obj_align(s_battery_text, LV_ALIGN_BOTTOM_MID, 20, -60);
+    refresh_battery(true);
 
     lv_obj_t *dial = lv_obj_create(page);
     lv_obj_set_size(dial, 460, 460);
@@ -1829,6 +1889,7 @@ void ui_task(void *arg)
             }
             if (s_current_page == NEX_PAGE_WATCHFACE) {
                 refresh_watchface();
+                refresh_battery(false);
             }
             if (s_current_page == NEX_PAGE_STOPWATCH) {
                 refresh_stopwatch();

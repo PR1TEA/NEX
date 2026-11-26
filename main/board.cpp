@@ -467,6 +467,23 @@ bool touch_init()
 
 }  // namespace
 
+bool board_battery_millivolts(uint16_t &millivolts)
+{
+    if (s_pmic == nullptr) {
+        return false;
+    }
+    uint8_t raw[2] = {};
+    if (!i2c_read_regs(s_pmic, 0x22, raw, sizeof(raw))) {
+        return false;
+    }
+    const uint16_t value = static_cast<uint16_t>(raw[0]) | (static_cast<uint16_t>(raw[1]) << 8);
+    if (value < 2500 || value > 5000) {
+        return false;
+    }
+    millivolts = value;
+    return true;
+}
+
 bool board_speaker_enable(bool enable)
 {
     if (s_ioe_addr == 0) {
