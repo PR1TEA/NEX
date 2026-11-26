@@ -20,11 +20,13 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "imu.h"
+#include "wallpaper.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "misc/cache/instance/lv_image_cache.h"
 #include "nex_core.h"
 
 #ifndef NEX_GIT_COMMIT
@@ -43,7 +45,7 @@ namespace {
 
 constexpr const char *TAG = "NEX-UI";
 
-constexpr int kPageCount = 11;
+constexpr int kPageCount = 12;
 constexpr uint32_t kTickMs = 20;
 
 SemaphoreHandle_t s_lvgl_mutex = nullptr;
@@ -68,6 +70,9 @@ lv_obj_t *s_sw_state = nullptr;
 
 // App menu / level
 lv_obj_t *s_menu_rows[4] = {};
+lv_obj_t *s_wallpaper = nullptr;
+int s_wall_gen = -1;
+lv_obj_t *s_phone_status = nullptr;
 lv_obj_t *s_att_canvas = nullptr;
 uint16_t *s_att_buf = nullptr;
 int s_att_theme = -1;
@@ -179,7 +184,7 @@ AttPalette palette_for(int theme)
 }
 
 // Settings / developer / apps rows
-lv_obj_t *s_settings_rows[4] = {};
+lv_obj_t *s_settings_rows[5] = {};
 lv_obj_t *s_dev_rows[5] = {};
 lv_obj_t *s_dev_mode_label = nullptr;
 lv_obj_t *s_app_rows[4] = {};
@@ -282,6 +287,8 @@ const char *page_title(int32_t page)
             return "应用";
         case NEX_PAGE_GYRO:
             return "姿态仪";
+        case NEX_PAGE_PHONE:
+            return "手机连接";
         default:
             return page_name(page);
     }
@@ -306,6 +313,8 @@ const char *page_name(int32_t page)
             return "APPS";
         case NEX_PAGE_APP_RUNNER:
             return "APP";
+        case NEX_PAGE_PHONE:
+            return "PHONE";
         default:
             return "?";
     }
@@ -515,6 +524,14 @@ void build_watchface()
 {
     lv_obj_t *page = s_pages[NEX_PAGE_WATCHFACE];
 
+    s_wallpaper = lv_image_create(page);
+    lv_obj_align(s_wallpaper, LV_ALIGN_CENTER, 0, 0);
+    if (wallpaper_exists()) {
+        lv_image_set_src(s_wallpaper, wallpaper_lvgl_path());
+    } else {
+        lv_obj_add_flag(s_wallpaper, LV_OBJ_FLAG_HIDDEN);
+    }
+
     lv_obj_t *dial = lv_obj_create(page);
     lv_obj_set_size(dial, 460, 460);
     lv_obj_align(dial, LV_ALIGN_CENTER, 0, 0);
@@ -699,12 +716,58 @@ void build_gyro()
     lv_obj_center(label);
 }
 
+void build_phone()
+{
+    lv_obj_t *page = s_pages[NEX_PAGE_PHONE];
+
+    lv_obj_t *title = lv_label_create(page);
+    lv_label_set_text(title, "网络: NEX-Watch");
+    lv_obj_set_style_text_font(title, &nex_cjk_16, 0);
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, -70);
+
+    lv_obj_t *password = lv_label_create(page);
+    lv_label_set_text(password, "密码: nexwatch1234");
+    lv_obj_set_style_text_font(password, &nex_cjk_16, 0);
+    lv_obj_set_style_text_color(password, lv_color_white(), 0);
+    lv_obj_align(password, LV_ALIGN_CENTER, 0, -30);
+
+    lv_obj_t *hint = lv_label_create(page);
+    lv_label_set_text(hint, "手机连接 WiFi 后打开 192.168.4.1");
+    lv_obj_set_width(hint, 420);
+    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(hint, &nex_cjk_16, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x9A9AA2), 0);
+    lv_obj_align(hint, LV_ALIGN_CENTER, 0, 20);
+
+    s_phone_status = lv_label_create(page);
+    lv_label_set_text(s_phone_status, "等待手机连接");
+    lv_obj_set_style_text_font(s_phone_status, &nex_cjk_16, 0);
+    lv_obj_set_style_text_color(s_phone_status, lv_color_hex(0xFFB020), 0);
+    lv_obj_align(s_phone_status, LV_ALIGN_CENTER, 0, 70);
+
+    lv_obj_t *back = lv_button_create(page);
+    lv_obj_set_size(back, 170, 54);
+    lv_obj_align(back, LV_ALIGN_BOTTOM_MID, 0, -26);
+    lv_obj_set_style_radius(back, 27, 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(0x141414), 0);
+    lv_obj_set_style_border_width(back, 1, 0);
+    lv_obj_set_style_border_color(back, lv_color_hex(0x3A3A3A), 0);
+    lv_obj_add_event_cb(back, row_event_cb, LV_EVENT_CLICKED,
+                        reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_BACK * 1000)));
+    lv_obj_t *label = lv_label_create(back);
+    lv_label_set_text(label, "停止并返回");
+    lv_obj_set_style_text_font(label, &nex_cjk_16, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_center(label);
+}
+
 void build_settings()
 {
     lv_obj_t *page = s_pages[NEX_PAGE_SETTINGS];
-    static const char *items[] = {"时间与日期", "系统信息", "开发者选项", "返回表盘"};
-    for (int i = 0; i < 4; ++i) {
-        s_settings_rows[i] = make_row(page, 96 + i * 64, NEX_ACT_SELECT, i, items[i], 20);
+    static const char *items[] = {"时间与日期", "系统信息", "开发者选项", "手机连接", "返回表盘"};
+    for (int i = 0; i < 5; ++i) {
+        s_settings_rows[i] = make_row(page, 88 + i * 60, NEX_ACT_SELECT, i, items[i], 20);
         lv_obj_add_event_cb(s_settings_rows[i], row_event_cb, LV_EVENT_CLICKED,
                             reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_SELECT * 1000 + i)));
     }
@@ -1065,10 +1128,27 @@ void refresh_stopwatch()
     set_text_if_changed(s_sw_state, state);
 }
 
+void refresh_phone()
+{
+    if (s_phone_status == nullptr) {
+        return;
+    }
+    if (!wallpaper_ap_active()) {
+        set_text_if_changed(s_phone_status, "热点关闭");
+        return;
+    }
+    static int last_generation = -1;
+    const int generation = wallpaper_generation();
+    if (generation != last_generation) {
+        last_generation = generation;
+        set_text_if_changed(s_phone_status, generation >= 0 ? "壁纸已更新" : "等待手机连接");
+    }
+}
+
 void refresh_settings()
 {
     const int sel = nex_core_selection();
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         style_row_selected(s_settings_rows[i], i == sel);
     }
 }
@@ -1265,6 +1345,9 @@ void refresh_page(int page)
         case NEX_PAGE_GYRO:
             refresh_gyro();
             break;
+        case NEX_PAGE_PHONE:
+            refresh_phone();
+            break;
         case NEX_PAGE_SETTINGS:
             refresh_settings();
             break;
@@ -1296,6 +1379,9 @@ void show_page(int page)
     if (page < 0 || page >= kPageCount) {
         page = NEX_PAGE_WATCHFACE;
     }
+    if (s_current_page == NEX_PAGE_PHONE && page != NEX_PAGE_PHONE) {
+        wallpaper_ap_stop();
+    }
     for (int i = 0; i < kPageCount; ++i) {
         if (s_pages[i] != nullptr) {
             if (i == page) {
@@ -1307,6 +1393,9 @@ void show_page(int page)
     }
     s_current_page = page;
     ESP_LOGI(TAG, "page -> %s", page_name(page));
+    if (page == NEX_PAGE_PHONE) {
+        wallpaper_ap_start();
+    }
     if (page == NEX_PAGE_TIME_EDITOR) {
         enter_time_editor();
     }
@@ -1356,6 +1445,23 @@ void ui_task(void *arg)
             }
             if (s_current_page == NEX_PAGE_GYRO) {
                 refresh_gyro();
+            }
+            if (s_current_page == NEX_PAGE_PHONE) {
+                refresh_phone();
+            }
+            {
+                const int generation = wallpaper_generation();
+                if (generation != s_wall_gen && s_wallpaper != nullptr) {
+                    s_wall_gen = generation;
+                    if (wallpaper_exists()) {
+                        lv_image_cache_drop(wallpaper_lvgl_path());
+                        lv_image_set_src(s_wallpaper, wallpaper_lvgl_path());
+                        lv_obj_align(s_wallpaper, LV_ALIGN_CENTER, 0, 0);
+                        lv_obj_remove_flag(s_wallpaper, LV_OBJ_FLAG_HIDDEN);
+                    } else {
+                        lv_obj_add_flag(s_wallpaper, LV_OBJ_FLAG_HIDDEN);
+                    }
+                }
             }
             lv_timer_handler();
             xSemaphoreGive(s_lvgl_mutex);
@@ -1448,6 +1554,7 @@ bool ui_start()
     build_menu();
     build_stopwatch();
     build_gyro();
+    build_phone();
     build_settings();
     build_time_editor();
     build_system_info();

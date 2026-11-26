@@ -13,6 +13,7 @@
 #include "nex_core.h"
 #include "nex_rust.h"
 #include "services.h"
+#include "wallpaper.h"
 #include "ui.h"
 
 static const char *TAG = "NEX";
@@ -25,7 +26,8 @@ extern "C" void nex_log_from_rust(const char *message)
 
 extern "C" void app_main(void)
 {
-    ESP_LOGI(TAG, "NEX Hello World starting (ESP-IDF %s)", esp_get_idf_version());
+    ESP_LOGI(TAG, "NEX Hello World starting (ESP-IDF %s, reset reason %d)", esp_get_idf_version(),
+             (int)esp_reset_reason());
 
     if (!nex::board_init()) {
         ESP_LOGE(TAG, "board init failed - system halted");
@@ -35,6 +37,7 @@ extern "C" void app_main(void)
 
     nex::services_init();
     nex::imu_service_init();
+    nex::wallpaper_init();
     nex_core_init();
     ESP_LOGI(TAG, "core ready: clock=%s source=%ld page=%ld", nex_core_clock_valid() ? "valid" : "invalid",
              (long)nex_core_clock_source(), (long)nex_core_page());

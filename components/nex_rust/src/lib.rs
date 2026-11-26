@@ -27,6 +27,7 @@ const PAGE_APP_RUNNER: i32 = 7;
 const PAGE_STOPWATCH: i32 = 8;
 const PAGE_MENU: i32 = 9;
 const PAGE_GYRO: i32 = 10;
+const PAGE_PHONE: i32 = 11;
 
 // ----------------------------------------------------------------- actions
 const ACT_UP: i32 = 1;
@@ -289,7 +290,7 @@ impl Core {
     fn item_count(&self) -> i32 {
         match self.page {
             PAGE_MENU => 4,
-            PAGE_SETTINGS => 4,
+            PAGE_SETTINGS => 5,
             PAGE_DEVELOPER => 5,
             PAGE_APPS => apps::APPS.len() as i32 + 1,
             _ => 1,
@@ -338,7 +339,8 @@ impl Core {
                     self.open(PAGE_SYSTEM_INFO);
                 }
                 2 => self.open(PAGE_DEVELOPER),
-                3 => self.open(self.settings_parent),
+                3 => self.open(PAGE_PHONE),
+                4 => self.open(self.settings_parent),
                 _ => {}
             },
             PAGE_MENU => match self.selection {

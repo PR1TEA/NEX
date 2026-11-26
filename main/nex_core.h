@@ -27,6 +27,7 @@ typedef enum {
     NEX_PAGE_STOPWATCH = 8,
     NEX_PAGE_MENU = 9,
     NEX_PAGE_GYRO = 10,
+    NEX_PAGE_PHONE = 11,
 } nex_page_t;
 
 typedef enum {

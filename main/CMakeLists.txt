@@ -5,6 +5,7 @@ idf_component_register(
         "board.cpp"
         "imu.cpp"
         "services.cpp"
+        "wallpaper.cpp"
         "ui.cpp"
         "fonts/nex_cjk_16.c"
         "fonts/nex_cjk_20.c"
@@ -22,6 +23,10 @@ idf_component_register(
         esp_app_format
         nvs_flash
         espressif__bmi270
+        esp_wifi
+        esp_netif
+        esp_http_server
+        spiffs
     PRIV_REQUIRES
         lvgl
         heap
