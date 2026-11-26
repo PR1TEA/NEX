@@ -484,6 +484,19 @@ bool board_battery_millivolts(uint16_t &millivolts)
     return true;
 }
 
+bool board_battery_charging()
+{
+    if (s_pmic == nullptr) {
+        return false;
+    }
+    uint8_t raw[2] = {};
+    if (!i2c_read_regs(s_pmic, 0x24, raw, sizeof(raw))) {
+        return false;
+    }
+    const uint16_t vin = static_cast<uint16_t>(raw[0]) | (static_cast<uint16_t>(raw[1]) << 8);
+    return vin > 4000;
+}
+
 bool board_speaker_enable(bool enable)
 {
     if (s_ioe_addr == 0) {

@@ -26,6 +26,7 @@ i2c_master_bus_handle_t board_i2c_bus();
 
 // Battery voltage from M5PM1 (millivolts).
 bool board_battery_millivolts(uint16_t &millivolts);
+bool board_battery_charging();
 
 // Enable the AW8737A speaker amplifier (M5IOE1 pin 10 + GPIO14).
 bool board_speaker_enable(bool enable);

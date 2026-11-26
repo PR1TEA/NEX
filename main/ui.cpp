@@ -79,6 +79,8 @@ lv_obj_t *s_wallpaper = nullptr;
 lv_obj_t *s_battery_body = nullptr;
 lv_obj_t *s_battery_fill = nullptr;
 lv_obj_t *s_battery_text = nullptr;
+lv_obj_t *s_battery_bolt = nullptr;
+bool s_battery_charging = false;
 int s_battery_percent = -1;
 int64_t s_battery_last_read = 0;
 int s_wall_gen = -1;
@@ -658,7 +660,16 @@ void refresh_battery(bool force)
         return;
     }
     s_battery_percent = percent;
-    const uint32_t color = percent < 20 ? 0xFF3B30 : (percent < 50 ? 0xFFCC00 : 0x4CD964);
+    const uint32_t color = percent < 20 ? 0xFFCC00 : 0xFFFFFF;
+    const bool charging = board_battery_charging();
+    if (charging != s_battery_charging && s_battery_bolt != nullptr) {
+        s_battery_charging = charging;
+        if (charging) {
+            lv_obj_remove_flag(s_battery_bolt, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_battery_bolt, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     if (s_battery_fill != nullptr) {
         lv_obj_set_width(s_battery_fill, 3 + (24 * percent) / 100);
         lv_obj_set_style_bg_color(s_battery_fill, lv_color_hex(color), 0);
@@ -685,7 +696,7 @@ void build_watchface()
 
     s_battery_body = lv_obj_create(page);
     lv_obj_set_size(s_battery_body, 34, 16);
-    lv_obj_align(s_battery_body, LV_ALIGN_BOTTOM_MID, -24, -58);
+    lv_obj_align(s_battery_body, LV_ALIGN_BOTTOM_MID, -34, -58);
     lv_obj_set_style_radius(s_battery_body, 3, 0);
     lv_obj_set_style_bg_opa(s_battery_body, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_battery_body, 2, 0);
@@ -704,8 +715,25 @@ void build_watchface()
     s_battery_text = lv_label_create(page);
     lv_label_set_text(s_battery_text, "--%");
     lv_obj_set_style_text_font(s_battery_text, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_battery_text, lv_color_hex(0x8A8A90), 0);
-    lv_obj_align(s_battery_text, LV_ALIGN_BOTTOM_MID, 20, -60);
+    lv_obj_set_style_text_color(s_battery_text, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_align(s_battery_text, LV_ALIGN_BOTTOM_MID, 22, -60);
+
+    static lv_point_precise_t bolt_points[7] = {{6, 0}, {1, 8}, {5, 8}, {2, 16}, {9, 6}, {5, 6}, {6, 0}};
+    lv_obj_t *bolt = lv_obj_create(page);
+    lv_obj_set_size(bolt, 10, 16);
+    lv_obj_align(bolt, LV_ALIGN_BOTTOM_MID, -4, -58);
+    lv_obj_set_style_bg_opa(bolt, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(bolt, 0, 0);
+    lv_obj_set_style_pad_all(bolt, 0, 0);
+    lv_obj_remove_flag(bolt, LV_OBJ_FLAG_SCROLLABLE);
+    s_battery_bolt = lv_line_create(bolt);
+    lv_obj_set_pos(s_battery_bolt, 0, 0);
+    lv_line_set_points(s_battery_bolt, bolt_points, 7);
+    lv_obj_set_style_line_width(s_battery_bolt, 2, 0);
+    lv_obj_set_style_line_color(s_battery_bolt, lv_color_hex(0x4CD964), 0);
+    lv_obj_set_style_line_rounded(s_battery_bolt, true, 0);
+    lv_obj_add_flag(s_battery_bolt, LV_OBJ_FLAG_HIDDEN);
+    s_battery_charging = false;
     refresh_battery(true);
 
     lv_obj_t *dial = lv_obj_create(page);
