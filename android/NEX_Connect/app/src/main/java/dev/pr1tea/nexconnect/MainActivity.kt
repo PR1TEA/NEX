@@ -5,16 +5,16 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Matrix
 import android.graphics.Path
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.net.Uri
-import android.net.wifi.WifiNetworkSpecifier
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.content.ContextCompat
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -115,64 +115,57 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun NexApp(themeMode: String, onThemeChange: (String) -> Unit) {
     val context = LocalContext.current
-    val manager = remember { context.getSystemService(ConnectivityManager::class.java) }
     var screen by remember { mutableStateOf(Screen.Home) }
     var connected by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("未连接") }
-    var connecting by remember { mutableStateOf(false) }
-    var callback by remember { mutableStateOf<ConnectivityManager.NetworkCallback?>(null) }
+    val ble = remember {
+        BleUploader(
+            context,
+            onStatus = { status = it },
+            onConnection = { ok ->
+                connected = ok
+                if (ok) screen = Screen.Main
+            },
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { ble.disconnect() }
+    }
 
-    fun connect() {
-        if (connecting) return
-        connecting = true
-        status = "正在连接 NEX-Watch…"
-        val specifier = WifiNetworkSpecifier.Builder()
-            .setSsid(SSID)
-            .setWpa2Passphrase(PASSWORD)
-            .build()
-        val request = NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .setNetworkSpecifier(specifier)
-            .build()
-        val cb = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                manager.bindProcessToNetwork(network)
-                connecting = false
-                connected = true
-                status = "已连接"
-                screen = Screen.Main
-            }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        if (result.values.all { it }) ble.scan() else status = "需要蓝牙权限才能连接"
+    }
 
-            override fun onUnavailable() {
-                connecting = false
-                status = "连接失败，请确认手表已打开“手机连接”页"
-            }
-
-            override fun onLost(network: Network) {
-                connected = false
-                status = "连接已断开"
+    fun startScan() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) ==
+                PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
+                PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                permissionLauncher.launch(
+                    arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT),
+                )
+                return
             }
         }
-        callback = cb
-        runCatching { manager.requestNetwork(request, cb, 30000) }.onFailure {
-            connecting = false
-            status = "无法发起连接：${it.message}"
-        }
+        ble.scan()
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when (screen) {
-            Screen.Home -> HomeScreen(status, connecting, ::connect)
+            Screen.Home -> HomeScreen(status, false, ::startScan)
             Screen.Main -> MainScreen(
                 connected = connected,
                 status = status,
                 onWallpaper = { screen = Screen.Wallpaper },
                 onOptions = { screen = Screen.Options },
-                onConnect = ::connect,
+                onConnect = ::startScan,
             )
             Screen.Options -> OptionsScreen(themeMode, onThemeChange) { screen = Screen.Main }
-            Screen.Wallpaper -> WallpaperScreen(onBack = { screen = Screen.Main })
+            Screen.Wallpaper -> WallpaperScreen(ble, onBack = { screen = Screen.Main })
         }
     }
 }
@@ -383,7 +376,7 @@ private fun AboutText() {
 }
 
 @Composable
-private fun WallpaperScreen(onBack: () -> Unit) {
+private fun WallpaperScreen(ble: BleUploader, onBack: () -> Unit) {
     val context = LocalContext.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -463,14 +456,16 @@ private fun WallpaperScreen(onBack: () -> Unit) {
                     val bytes = withContext(Dispatchers.Default) {
                         renderJpeg(source, scale, offset, boxPx)
                     }
-                    message = if (bytes == null) {
-                        "图片处理失败"
-                    } else if (uploadJpeg(bytes)) {
-                        "上传成功，手表已更新壁纸"
+                    if (bytes == null) {
+                        message = "图片处理失败"
+                        busy = false
                     } else {
-                        "上传失败，请确认已连接 NEX-Watch"
+                        message = "正在上传…"
+                        ble.upload(bytes) { ok ->
+                            busy = false
+                            message = if (ok) "上传成功，手表已更新壁纸" else "上传失败，请确认已连接 NEX-Watch"
+                        }
                     }
-                    busy = false
                 }
             },
         ) { Text(if (busy) "上传中…" else "确认并上传", fontSize = 18.sp) }
@@ -506,18 +501,3 @@ private fun renderJpeg(source: Bitmap, userScale: Float, offset: Offset, boxPx: 
         output.recycle()
         stream.toByteArray()
     }.getOrNull()
-
-private suspend fun uploadJpeg(bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
-    runCatching {
-        val connection = URL(UPLOAD_URL).openConnection() as HttpURLConnection
-        connection.requestMethod = "POST"
-        connection.doOutput = true
-        connection.connectTimeout = 10000
-        connection.readTimeout = 20000
-        connection.setRequestProperty("Content-Type", "image/jpeg")
-        connection.outputStream.use { it.write(bytes) }
-        val code = connection.responseCode
-        connection.disconnect()
-        code in 200..299
-    }.getOrDefault(false)
-}

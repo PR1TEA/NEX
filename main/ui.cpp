@@ -19,6 +19,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "ble_upload.h"
 #include "imu.h"
 #include "wallpaper.h"
 #include "freertos/FreeRTOS.h"
@@ -719,19 +720,19 @@ void build_phone()
     lv_obj_t *page = s_pages[NEX_PAGE_PHONE];
 
     lv_obj_t *title = lv_label_create(page);
-    lv_label_set_text(title, "网络: NEX-Watch");
+    lv_label_set_text(title, "蓝牙: NEX-Watch");
     lv_obj_set_style_text_font(title, &nex_cjk_16, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_align(title, LV_ALIGN_CENTER, 0, -70);
 
     lv_obj_t *password = lv_label_create(page);
-    lv_label_set_text(password, "密码: nexwatch1234");
+    lv_label_set_text(password, "无需 WiFi");
     lv_obj_set_style_text_font(password, &nex_cjk_16, 0);
     lv_obj_set_style_text_color(password, lv_color_white(), 0);
     lv_obj_align(password, LV_ALIGN_CENTER, 0, -30);
 
     lv_obj_t *hint = lv_label_create(page);
-    lv_label_set_text(hint, "手机连接 WiFi 后打开 192.168.4.1");
+    lv_label_set_text(hint, "打开 NEX_Connect 连接设备");
     lv_obj_set_width(hint, 420);
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(hint, &nex_cjk_16, 0);
@@ -1134,16 +1135,23 @@ void refresh_phone()
     if (s_phone_status == nullptr) {
         return;
     }
-    if (!wallpaper_ap_active()) {
-        set_text_if_changed(s_phone_status, "热点关闭");
+    if (!ble_upload_connected()) {
+        set_text_if_changed(s_phone_status, "等待手机连接");
         return;
     }
-    static int last_generation = -1;
-    const int generation = wallpaper_generation();
-    if (generation != last_generation) {
-        last_generation = generation;
-        set_text_if_changed(s_phone_status, generation >= 0 ? "壁纸已更新" : "等待手机连接");
+    const int status = ble_upload_status();
+    const int progress = ble_upload_progress();
+    char text[48];
+    if (status == 2) {
+        std::snprintf(text, sizeof(text), "壁纸已更新");
+    } else if (status == 3) {
+        std::snprintf(text, sizeof(text), "上传失败");
+    } else if (progress >= 0) {
+        std::snprintf(text, sizeof(text), "接收中 %d%%", progress);
+    } else {
+        std::snprintf(text, sizeof(text), "已连接，等待图片");
     }
+    set_text_if_changed(s_phone_status, text);
 }
 
 void refresh_settings()
@@ -1381,7 +1389,7 @@ void show_page(int page)
         page = NEX_PAGE_WATCHFACE;
     }
     if (s_current_page == NEX_PAGE_PHONE && page != NEX_PAGE_PHONE) {
-        wallpaper_ap_stop();
+        ble_upload_advertise(false);
     }
     for (int i = 0; i < kPageCount; ++i) {
         if (s_pages[i] != nullptr) {
@@ -1395,7 +1403,7 @@ void show_page(int page)
     s_current_page = page;
     ESP_LOGI(TAG, "page -> %s", page_name(page));
     if (page == NEX_PAGE_PHONE) {
-        wallpaper_ap_start();
+        ble_upload_advertise(true);
     }
     if (page == NEX_PAGE_TIME_EDITOR) {
         enter_time_editor();

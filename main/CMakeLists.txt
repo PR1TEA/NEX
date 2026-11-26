@@ -3,6 +3,7 @@ idf_component_register(
     SRCS
         "main.cpp"
         "board.cpp"
+        "ble_upload.cpp"
         "imu.cpp"
         "services.cpp"
         "wallpaper.cpp"
@@ -23,10 +24,8 @@ idf_component_register(
         esp_app_format
         nvs_flash
         espressif__bmi270
-        esp_wifi
-        esp_netif
-        esp_http_server
         spiffs
+        bt
     PRIV_REQUIRES
         lvgl
         heap
