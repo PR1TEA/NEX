@@ -5,10 +5,12 @@ idf_component_register(
         "board.cpp"
         "ble_upload.cpp"
         "imu.cpp"
+        "reminders.cpp"
         "services.cpp"
         "wallpaper.cpp"
         "ui.cpp"
         "fonts/nex_cjk_16.c"
+        "fonts/nex_cjk_text_16.c"
         "fonts/nex_cjk_20.c"
         "fonts/nex_font_64_bold.c"
         "fonts/nex_font_64_regular.c"
@@ -26,6 +28,7 @@ idf_component_register(
         espressif__bmi270
         spiffs
         bt
+        json
     PRIV_REQUIRES
         lvgl
         heap

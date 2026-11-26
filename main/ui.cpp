@@ -21,6 +21,7 @@
 #include "esp_timer.h"
 #include "ble_upload.h"
 #include "imu.h"
+#include "reminders.h"
 #include "wallpaper.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -40,13 +41,14 @@ extern "C" const lv_font_t nex_font_64_regular;
 extern "C" const lv_font_t nex_font_40_regular;
 extern "C" const lv_font_t nex_cjk_20;
 extern "C" const lv_font_t nex_cjk_16;
+extern "C" const lv_font_t nex_cjk_text_16;
 
 namespace nex {
 namespace {
 
 constexpr const char *TAG = "NEX-UI";
 
-constexpr int kPageCount = 12;
+constexpr int kPageCount = 13;
 constexpr uint32_t kTickMs = 20;
 
 SemaphoreHandle_t s_lvgl_mutex = nullptr;
@@ -69,10 +71,17 @@ lv_obj_t *s_sw_time = nullptr;
 lv_obj_t *s_sw_state = nullptr;
 
 // App menu / level
-lv_obj_t *s_menu_rows[4] = {};
+lv_obj_t *s_menu_rows[5] = {};
 lv_obj_t *s_wallpaper = nullptr;
 int s_wall_gen = -1;
 lv_obj_t *s_phone_status = nullptr;
+
+// Reminders
+lv_obj_t *s_reminder_list = nullptr;
+lv_obj_t *s_reminder_empty = nullptr;
+int s_reminder_gen = -1;
+int s_reminder_sel = -1;
+int s_reminder_count = -1;
 lv_obj_t *s_att_canvas = nullptr;
 uint16_t *s_att_buf = nullptr;
 int s_att_theme = -1;
@@ -289,6 +298,8 @@ const char *page_title(int32_t page)
             return "姿态仪";
         case NEX_PAGE_PHONE:
             return "手机连接";
+        case NEX_PAGE_REMINDERS:
+            return "提醒事项";
         default:
             return page_name(page);
     }
@@ -591,9 +602,9 @@ void build_watchface()
 void build_menu()
 {
     lv_obj_t *page = s_pages[NEX_PAGE_MENU];
-    static const char *items[] = {"秒表", "姿态仪", "设置", "返回表盘"};
-    for (int i = 0; i < 4; ++i) {
-        s_menu_rows[i] = make_row(page, 96 + i * 64, NEX_ACT_SELECT, i, items[i], 20);
+    static const char *items[] = {"秒表", "姿态仪", "提醒事项", "设置", "返回表盘"};
+    for (int i = 0; i < 5; ++i) {
+        s_menu_rows[i] = make_row(page, 80 + i * 60, NEX_ACT_SELECT, i, items[i], 20);
         lv_obj_add_event_cb(s_menu_rows[i], row_event_cb, LV_EVENT_CLICKED,
                             reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_SELECT * 1000 + i)));
     }
@@ -753,6 +764,104 @@ void build_phone()
     lv_obj_set_style_text_font(label, &nex_cjk_16, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_center(label);
+}
+
+void refresh_reminders();
+
+void reminder_row_cb(lv_event_t *event)
+{
+    if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
+        return;
+    }
+    const int index = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    reminders_toggle(index);
+    refresh_reminders();
+}
+
+void refresh_reminders()
+{
+    if (s_reminder_list == nullptr) {
+        return;
+    }
+    const int count = reminders_count();
+    const int selection = nex_core_selection();
+    const int generation = reminders_generation();
+    if (count == s_reminder_count && selection == s_reminder_sel && generation == s_reminder_gen) {
+        return;
+    }
+    s_reminder_count = count;
+    s_reminder_sel = selection;
+    s_reminder_gen = generation;
+
+    lv_obj_clean(s_reminder_list);
+    lv_obj_t *selected_row = nullptr;
+    for (int i = 0; i < count; ++i) {
+        const Reminder *item = reminders_get(i);
+        if (item == nullptr) {
+            break;
+        }
+        lv_obj_t *row = lv_obj_create(s_reminder_list);
+        lv_obj_set_size(row, 400, 64);
+        lv_obj_set_pos(row, 10, i * 72);
+        lv_obj_set_style_radius(row, 32, 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(0x141416), 0);
+        lv_obj_set_style_border_width(row, i == selection ? 2 : 1, 0);
+        lv_obj_set_style_border_color(row, i == selection ? lv_color_white() : lv_color_hex(0x3A3A40), 0);
+        lv_obj_add_event_cb(row, reminder_row_cb, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(i)));
+
+        lv_obj_t *dot = lv_obj_create(row);
+        lv_obj_set_size(dot, 20, 20);
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_border_width(dot, 2, 0);
+        lv_obj_set_style_border_color(dot, lv_color_white(), 0);
+        lv_obj_set_style_bg_color(dot, lv_color_hex(0xFFD24A), 0);
+        lv_obj_set_style_bg_opa(dot, item->done ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_align(dot, LV_ALIGN_LEFT_MID, 16, 0);
+
+        lv_obj_t *label = lv_label_create(row);
+        lv_label_set_text(label, item->text);
+        lv_obj_set_width(label, 320);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_font(label, &nex_cjk_text_16, 0);
+        lv_obj_set_style_text_color(label, item->done ? lv_color_hex(0x808080) : lv_color_white(), 0);
+        lv_obj_align(label, LV_ALIGN_LEFT_MID, 52, 0);
+
+        if (i == selection) {
+            selected_row = row;
+        }
+    }
+    if (selected_row != nullptr) {
+        lv_obj_scroll_to_view(selected_row, LV_ANIM_ON);
+    }
+    if (s_reminder_empty != nullptr) {
+        if (count == 0) {
+            lv_obj_remove_flag(s_reminder_empty, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_reminder_empty, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+void build_reminders()
+{
+    lv_obj_t *page = s_pages[NEX_PAGE_REMINDERS];
+    s_reminder_list = lv_obj_create(page);
+    lv_obj_set_size(s_reminder_list, 420, 300);
+    lv_obj_align(s_reminder_list, LV_ALIGN_TOP_MID, 0, 96);
+    lv_obj_set_style_bg_opa(s_reminder_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_reminder_list, 0, 0);
+    lv_obj_set_style_pad_all(s_reminder_list, 0, 0);
+    lv_obj_set_scroll_dir(s_reminder_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_reminder_list, LV_SCROLLBAR_MODE_OFF);
+
+    s_reminder_empty = lv_label_create(page);
+    lv_label_set_text(s_reminder_empty, "暂无提醒，手机添加");
+    lv_obj_set_width(s_reminder_empty, 420);
+    lv_obj_set_style_text_align(s_reminder_empty, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_reminder_empty, &nex_cjk_text_16, 0);
+    lv_obj_set_style_text_color(s_reminder_empty, lv_color_hex(0x808080), 0);
+    lv_obj_align(s_reminder_empty, LV_ALIGN_CENTER, 0, 0);
 }
 
 void build_settings()
@@ -1057,7 +1166,7 @@ void refresh_watchface()
 void refresh_menu()
 {
     const int sel = nex_core_selection();
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         style_row_selected(s_menu_rows[i], i == sel);
     }
 }
@@ -1351,6 +1460,9 @@ void refresh_page(int page)
         case NEX_PAGE_PHONE:
             refresh_phone();
             break;
+        case NEX_PAGE_REMINDERS:
+            refresh_reminders();
+            break;
         case NEX_PAGE_SETTINGS:
             refresh_settings();
             break;
@@ -1425,6 +1537,12 @@ void ui_task(void *arg)
         int32_t event = 0;
         bool dirty = false;
         while (xQueueReceive(s_key_queue, &event, 0) == pdTRUE) {
+            if (event == NEX_KEY_BOTH_CLICK && s_current_page == NEX_PAGE_REMINDERS) {
+                reminders_toggle(nex_core_selection());
+                refresh_reminders();
+                dirty = true;
+                continue;
+            }
             add_event("KEY %s", event == NEX_KEY_A_CLICK   ? "A CLICK"
                                 : event == NEX_KEY_B_CLICK ? "B CLICK"
                                 : event == NEX_KEY_A_LONG  ? "A LONG"
@@ -1558,6 +1676,7 @@ bool ui_start()
     build_stopwatch();
     build_gyro();
     build_phone();
+    build_reminders();
     build_settings();
     build_time_editor();
     build_system_info();

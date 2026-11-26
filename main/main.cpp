@@ -13,6 +13,7 @@
 #include "keys.h"
 #include "nex_core.h"
 #include "nex_rust.h"
+#include "reminders.h"
 #include "services.h"
 #include "wallpaper.h"
 #include "ui.h"
@@ -39,6 +40,7 @@ extern "C" void app_main(void)
     nex::services_init();
     nex::imu_service_init();
     nex::wallpaper_init();
+    nex::reminders_init();
     nex::ble_upload_init();
     nex_core_init();
     ESP_LOGI(TAG, "core ready: clock=%s source=%ld page=%ld", nex_core_clock_valid() ? "valid" : "invalid",

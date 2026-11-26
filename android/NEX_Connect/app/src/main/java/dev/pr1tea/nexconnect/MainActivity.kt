@@ -36,11 +36,16 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +58,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,12 +90,14 @@ import kotlin.math.sin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 private const val SSID = "NEX-Watch"
 private const val PASSWORD = "nexwatch1234"
 private const val UPLOAD_URL = "http://192.168.4.1/upload"
 
-private enum class Screen { Home, Main, Options, Wallpaper }
+private enum class Screen { Home, Main, Options, Wallpaper, Reminders }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,9 +124,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun NexApp(themeMode: String, onThemeChange: (String) -> Unit) {
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("nex", android.content.Context.MODE_PRIVATE) }
     var screen by remember { mutableStateOf(Screen.Home) }
     var connected by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("未连接") }
+    var syncState by remember { mutableStateOf("") }
+    val reminders = remember { mutableStateListOf<ReminderItem>() }
+
     val ble = remember {
         BleUploader(
             context,
@@ -130,6 +143,41 @@ private fun NexApp(themeMode: String, onThemeChange: (String) -> Unit) {
     }
     DisposableEffect(Unit) {
         onDispose { ble.disconnect() }
+    }
+
+    LaunchedEffect(Unit) {
+        reminders.clear()
+        reminders.addAll(parseReminders(prefs.getString("reminders", "") ?: ""))
+    }
+    LaunchedEffect(connected) {
+        if (connected) {
+            syncState = "读取中…"
+            ble.getReminders { json ->
+                if (json != null) {
+                    reminders.clear()
+                    reminders.addAll(parseReminders(json))
+                    prefs.edit().putString("reminders", remindersToJson(reminders)).apply()
+                    syncState = "已同步"
+                } else {
+                    syncState = "读取失败"
+                }
+            }
+        }
+    }
+
+    fun persist() {
+        prefs.edit().putString("reminders", remindersToJson(reminders)).apply()
+    }
+
+    fun sync() {
+        if (!connected) {
+            syncState = "未连接，改动已保存"
+            return
+        }
+        syncState = "同步中…"
+        ble.setReminders(remindersToJson(reminders)) { ok ->
+            syncState = if (ok) "已同步" else "同步失败"
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -160,12 +208,39 @@ private fun NexApp(themeMode: String, onThemeChange: (String) -> Unit) {
             Screen.Main -> MainScreen(
                 connected = connected,
                 status = status,
+                pending = reminders.count { !it.done },
                 onWallpaper = { screen = Screen.Wallpaper },
+                onReminders = { screen = Screen.Reminders },
                 onOptions = { screen = Screen.Options },
                 onConnect = ::startScan,
             )
             Screen.Options -> OptionsScreen(themeMode, onThemeChange) { screen = Screen.Main }
             Screen.Wallpaper -> WallpaperScreen(ble, onBack = { screen = Screen.Main })
+            Screen.Reminders -> RemindersScreen(
+                items = reminders,
+                syncState = syncState,
+                onBack = { screen = Screen.Main },
+                onAdd = {
+                    reminders.add(it)
+                    persist()
+                    sync()
+                },
+                onEdit = { index, text ->
+                    reminders[index] = reminders[index].copy(text = text)
+                    persist()
+                    sync()
+                },
+                onToggle = { index ->
+                    reminders[index] = reminders[index].copy(done = !reminders[index].done)
+                    persist()
+                    sync()
+                },
+                onDelete = { index ->
+                    reminders.removeAt(index)
+                    persist()
+                    sync()
+                },
+            )
         }
     }
 }
@@ -255,7 +330,9 @@ private fun HomeScreen(status: String, connecting: Boolean, onConnect: () -> Uni
 private fun MainScreen(
     connected: Boolean,
     status: String,
+    pending: Int,
     onWallpaper: () -> Unit,
+    onReminders: () -> Unit,
     onOptions: () -> Unit,
     onConnect: () -> Unit,
 ) {
@@ -307,6 +384,21 @@ private fun MainScreen(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "从相册选择图片，圆形裁剪后上传到手表",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Card(
+                shape = RoundedCornerShape(32.dp),
+                modifier = Modifier.fillMaxWidth().clickable { onReminders() },
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Text("提醒事项", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (pending > 0) "$pending 项待办" else "暂无待办，点此添加",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -501,3 +593,119 @@ private fun renderJpeg(source: Bitmap, userScale: Float, offset: Offset, boxPx: 
         output.recycle()
         stream.toByteArray()
     }.getOrNull()
+
+private data class ReminderItem(val text: String, val done: Boolean)
+
+private fun parseReminders(json: String): List<ReminderItem> {
+    if (json.isBlank()) return emptyList()
+    return runCatching {
+        val root = JSONObject(json)
+        val items = root.optJSONArray("items") ?: JSONArray()
+        (0 until items.length()).mapNotNull { index ->
+            val item = items.optJSONObject(index) ?: return@mapNotNull null
+            ReminderItem(
+                text = item.optString("text", ""),
+                done = item.optBoolean("done", false),
+            )
+        }
+    }.getOrDefault(emptyList())
+}
+
+private fun remindersToJson(items: List<ReminderItem>): String {
+    val root = JSONObject()
+    root.put("v", 1)
+    val array = JSONArray()
+    items.forEach { item ->
+        array.put(JSONObject().put("text", item.text).put("done", item.done))
+    }
+    root.put("items", array)
+    return root.toString()
+}
+
+@Composable
+private fun RemindersScreen(
+    items: List<ReminderItem>,
+    syncState: String,
+    onBack: () -> Unit,
+    onAdd: (ReminderItem) -> Unit,
+    onEdit: (Int, String) -> Unit,
+    onToggle: (Int) -> Unit,
+    onDelete: (Int) -> Unit,
+) {
+    var dialog by remember { mutableStateOf<Pair<Int, String>?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(24.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("返回") }
+            Spacer(Modifier.width(8.dp))
+            Text("提醒事项", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(
+            if (syncState.isBlank()) "与手表自动同步" else syncState,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(items.size) { index ->
+                val item = items[index]
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = item.done, onCheckedChange = { onToggle(index) })
+                    Text(
+                        text = item.text,
+                        modifier = Modifier.weight(1f).clickable { dialog = index to item.text },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (item.done) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurface,
+                    )
+                    TextButton(onClick = { onDelete(index) }) { Text("删除") }
+                }
+                HorizontalDivider()
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = { dialog = -1 to "" },
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.fillMaxWidth().height(58.dp),
+        ) { Text("添加提醒", fontSize = 17.sp) }
+    }
+
+    val editing = dialog
+    if (editing != null) {
+        var text by remember(editing) { mutableStateOf(editing.second) }
+        AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text(if (editing.first < 0) "添加提醒" else "编辑提醒") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    placeholder = { Text("例如：买牛奶") },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (text.isNotBlank()) {
+                            if (editing.first < 0) onAdd(ReminderItem(text.trim(), false))
+                            else onEdit(editing.first, text.trim())
+                            dialog = null
+                        }
+                    },
+                ) { Text("确定") }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("取消") } },
+        )
+    }
+}
