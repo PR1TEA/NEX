@@ -50,6 +50,8 @@ typedef enum {
     NEX_ACT_STOPWATCH_RESET = 9,
     NEX_ACT_OPEN_STOPWATCH = 10,
     NEX_ACT_OPEN_MENU = 11,
+    NEX_ACT_STOPWATCH_START = 12,
+    NEX_ACT_STOPWATCH_PAUSE = 13,
 } nex_action_t;
 
 typedef enum {

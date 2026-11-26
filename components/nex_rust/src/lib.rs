@@ -40,6 +40,8 @@ const ACT_STOPWATCH_TOGGLE: i32 = 8;
 const ACT_STOPWATCH_RESET: i32 = 9;
 const ACT_OPEN_STOPWATCH: i32 = 10;
 const ACT_OPEN_MENU: i32 = 11;
+const ACT_STOPWATCH_START: i32 = 12;
+const ACT_STOPWATCH_PAUSE: i32 = 13;
 
 // -------------------------------------------------------------------- keys
 const KEY_A_CLICK: i32 = 1;
@@ -419,6 +421,14 @@ impl Core {
                 }
             }
             ACT_STOPWATCH_RESET => self.stopwatch.reset(),
+            ACT_STOPWATCH_START => {
+                let now = unsafe { nex_monotonic_ms() };
+                self.stopwatch.start(now);
+            }
+            ACT_STOPWATCH_PAUSE => {
+                let now = unsafe { nex_monotonic_ms() };
+                self.stopwatch.stop(now);
+            }
             ACT_OPEN_STOPWATCH => self.open(PAGE_STOPWATCH),
             ACT_OPEN_MENU => self.open(PAGE_MENU),
             _ => {}
@@ -427,8 +437,20 @@ impl Core {
 
     fn on_key(&mut self, event: i32) {
         match event {
-            KEY_A_CLICK => self.action(ACT_UP, 0),
-            KEY_B_CLICK => self.action(ACT_DOWN, 0),
+            KEY_A_CLICK => {
+                if self.page == PAGE_STOPWATCH {
+                    self.action(ACT_STOPWATCH_PAUSE, 0);
+                } else {
+                    self.action(ACT_UP, 0);
+                }
+            }
+            KEY_B_CLICK => {
+                if self.page == PAGE_STOPWATCH {
+                    self.action(ACT_STOPWATCH_START, 0);
+                } else {
+                    self.action(ACT_DOWN, 0);
+                }
+            }
             KEY_A_LONG => self.action(ACT_BACK, 0),
             KEY_B_LONG => {
                 if self.page == PAGE_WATCHFACE {

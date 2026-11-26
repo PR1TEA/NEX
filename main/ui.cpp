@@ -511,9 +511,14 @@ void build_stopwatch()
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
         lv_obj_center(label);
     };
-    make_button("开始/暂停", NEX_ACT_STOPWATCH_TOGGLE, -146);
-    make_button("归零", NEX_ACT_STOPWATCH_RESET, 0);
-    make_button("返回", NEX_ACT_BACK, 146);
+    make_button("归零", NEX_ACT_STOPWATCH_RESET, -90);
+    make_button("返回", NEX_ACT_BACK, 90);
+
+    lv_obj_t *hint = lv_label_create(page);
+    lv_label_set_text(hint, "B 开始   A 暂停");
+    lv_obj_set_style_text_font(hint, &nex_cjk_16, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x777777), 0);
+    lv_obj_align(hint, LV_ALIGN_CENTER, 0, 62);
 }
 
 void build_gyro()
