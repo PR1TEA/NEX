@@ -29,6 +29,11 @@
 #define NEX_GIT_COMMIT "unknown"
 #endif
 
+// Digit-only Montserrat fonts generated for the watchface (64/64/40 px).
+extern "C" const lv_font_t nex_font_64_bold;
+extern "C" const lv_font_t nex_font_64_regular;
+extern "C" const lv_font_t nex_font_40_regular;
+
 namespace nex {
 namespace {
 
@@ -382,12 +387,11 @@ void build_watchface()
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_pad_all(row, 0, 0);
-    lv_obj_set_style_pad_column(row, 8, 0);
+    lv_obj_set_style_pad_column(row, 0, 0);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER);
     lv_obj_align(row, LV_ALIGN_CENTER, 0, -20);
-
     auto make_digit = [&](int width, const lv_font_t *font, bool bold) {
         lv_obj_t *label = lv_label_create(row);
         lv_obj_set_width(label, width);
@@ -401,13 +405,13 @@ void build_watchface()
         }
         return label;
     };
-    s_time_h = make_digit(66, &lv_font_montserrat_48, true);
-    s_time_m = make_digit(66, &lv_font_montserrat_48, false);
-    s_time_s = make_digit(42, &lv_font_montserrat_28, false);
+    s_time_h = make_digit(90, &nex_font_64_bold, false);
+    s_time_m = make_digit(90, &nex_font_64_regular, false);
+    s_time_s = make_digit(58, &nex_font_40_regular, false);
 
     s_time_invalid = lv_label_create(page);
     lv_label_set_text(s_time_invalid, "------");
-    lv_obj_set_style_text_font(s_time_invalid, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(s_time_invalid, &nex_font_64_regular, 0);
     lv_obj_set_style_text_color(s_time_invalid, lv_color_white(), 0);
     lv_obj_align(s_time_invalid, LV_ALIGN_CENTER, 0, -20);
     lv_obj_add_flag(s_time_invalid, LV_OBJ_FLAG_HIDDEN);

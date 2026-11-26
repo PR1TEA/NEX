@@ -5,6 +5,9 @@ idf_component_register(
         "board.cpp"
         "services.cpp"
         "ui.cpp"
+        "fonts/nex_font_64_bold.c"
+        "fonts/nex_font_64_regular.c"
+        "fonts/nex_font_40_regular.c"
         "keys.cpp"
     INCLUDE_DIRS
         "."
