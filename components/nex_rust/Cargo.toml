@@ -1,0 +1,18 @@
+[package]
+name = "nex_rust"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "NEX Rust core: C ABI layer linked into the ESP-IDF firmware"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+# Abort instead of unwinding: no panic may cross the FFI boundary.
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = "debuginfo"

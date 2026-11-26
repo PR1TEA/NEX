@@ -9,6 +9,7 @@ idf_component_register(
         "."
     REQUIRES
         M5GFX
+        nex_rust
         esp_driver_i2c
         esp_timer
     PRIV_REQUIRES

@@ -1,0 +1,7 @@
+# Xtensa ESP-IDF targets have no prebuilt std, so std is compiled from the
+# rust-src component shipped in the espup toolchain.
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[build]
+target = "xtensa-esp32s3-espidf"

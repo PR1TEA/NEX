@@ -9,9 +9,16 @@
 
 #include "board.h"
 #include "keys.h"
+#include "nex_rust.h"
 #include "ui.h"
 
 static const char *TAG = "NEX";
+
+// Called from Rust through the C ABI declared in nex_rust.h.
+extern "C" void nex_log_from_rust(const char *message)
+{
+    ESP_LOGI("NEX_RUST", "%s", message != nullptr ? message : "(null)");
+}
 
 extern "C" void app_main(void)
 {
@@ -32,6 +39,10 @@ extern "C" void app_main(void)
     if (!nex::keys_start()) {
         ESP_LOGE(TAG, "physical key init failed");
     }
+
+    const int32_t rust_sum = nex_rust_add(20, 22);
+    ESP_LOGI(TAG, "Rust interop: nex_rust_add(20, 22) = %d (expected 42)", (int)rust_sum);
+    nex_rust_hello();
 
     ESP_LOGI(TAG, "UI running");
 

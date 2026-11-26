@@ -21,4 +21,7 @@ __pycache__/
 *.tmp
 .DS_Store
 # Fetched third-party components (pinned by tools/fetch_components.sh)
-/components/
+/components/M5GFX/
+
+# Rust build output (Cargo normally builds into the component build dir)
+/components/nex_rust/target/
