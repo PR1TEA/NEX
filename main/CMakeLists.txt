@@ -3,6 +3,7 @@ idf_component_register(
     SRCS
         "main.cpp"
         "board.cpp"
+        "imu.cpp"
         "services.cpp"
         "ui.cpp"
         "fonts/nex_font_64_bold.c"
@@ -18,6 +19,7 @@ idf_component_register(
         esp_timer
         esp_app_format
         nvs_flash
+        espressif__bmi270
     PRIV_REQUIRES
         lvgl
         heap

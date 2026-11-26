@@ -1,4 +1,60 @@
 dependencies:
+  espressif/bmi270:
+    component_hash: a234ece0bea3595c45bb75f80449b823b366ca677aed6e3d4c35f14c90c4ace5
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.2'
+    - name: espressif/sensor_hub
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^0.1.4
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.0
+  espressif/cmake_utilities:
+    component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.1'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 0.5.3
+  espressif/i2c_bus:
+    component_hash: 483112c1619c54c38d0b734fb25f1678733267858a77b7af2f48cc7db6dbbd84
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: '*'
+    - name: idf
+      require: private
+      version: '>=4.0'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.5.2
+  espressif/sensor_hub:
+    component_hash: ea30db551c34aee2862482abf8b3164dd3855ecb4b4659b1e6878455c9cb9e22
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: 0.*
+    - name: espressif/i2c_bus
+      registry_url: https://components.espressif.com
+      require: public
+      version: 1.*
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 0.1.5
   idf:
     source:
       type: idf
@@ -11,8 +67,9 @@ dependencies:
       type: service
     version: 9.5.0
 direct_dependencies:
+- espressif/bmi270
 - idf
 - lvgl/lvgl
-manifest_hash: c82879cbf5864d0e9cfc12ec7e9fdf380e6e54c9f8e45643b50c2950f410bc0b
+manifest_hash: 4b47e6d4084b11eabc4b55b2b2eac735fe9e58408c2cded371bd312a0cff9188
 target: esp32s3
 version: 2.0.0

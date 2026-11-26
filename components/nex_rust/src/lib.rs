@@ -25,6 +25,8 @@ const PAGE_INPUT_DIAG: i32 = 5;
 const PAGE_APPS: i32 = 6;
 const PAGE_APP_RUNNER: i32 = 7;
 const PAGE_STOPWATCH: i32 = 8;
+const PAGE_MENU: i32 = 9;
+const PAGE_GYRO: i32 = 10;
 
 // ----------------------------------------------------------------- actions
 const ACT_UP: i32 = 1;
@@ -37,6 +39,7 @@ const ACT_HOME: i32 = 7;
 const ACT_STOPWATCH_TOGGLE: i32 = 8;
 const ACT_STOPWATCH_RESET: i32 = 9;
 const ACT_OPEN_STOPWATCH: i32 = 10;
+const ACT_OPEN_MENU: i32 = 11;
 
 // -------------------------------------------------------------------- keys
 const KEY_A_CLICK: i32 = 1;
@@ -161,6 +164,7 @@ struct Core {
     dev_enabled: bool,
     running_app: i32,
     system_parent: i32,
+    settings_parent: i32,
     error: [u8; 96],
     initialized: bool,
     stopwatch: Stopwatch,
@@ -176,6 +180,7 @@ impl Default for Core {
             dev_enabled: false,
             running_app: -1,
             system_parent: PAGE_SETTINGS,
+            settings_parent: PAGE_WATCHFACE,
             error: [0u8; 96],
             initialized: false,
             stopwatch: Stopwatch::default(),
@@ -267,6 +272,7 @@ impl Core {
 
         self.page = PAGE_WATCHFACE;
         self.selection = 0;
+        self.settings_parent = PAGE_WATCHFACE;
         self.dev_enabled = false;
         self.running_app = -1;
         self.initialized = true;
@@ -274,6 +280,7 @@ impl Core {
 
     fn item_count(&self) -> i32 {
         match self.page {
+            PAGE_MENU => 4,
             PAGE_SETTINGS => 4,
             PAGE_DEVELOPER => 5,
             PAGE_APPS => apps::APPS.len() as i32 + 1,
@@ -323,6 +330,16 @@ impl Core {
                     self.open(PAGE_SYSTEM_INFO);
                 }
                 2 => self.open(PAGE_DEVELOPER),
+                3 => self.open(self.settings_parent),
+                _ => {}
+            },
+            PAGE_MENU => match self.selection {
+                0 => self.open(PAGE_STOPWATCH),
+                1 => self.open(PAGE_GYRO),
+                2 => {
+                    self.settings_parent = PAGE_MENU;
+                    self.open(PAGE_SETTINGS);
+                }
                 3 => self.open(PAGE_WATCHFACE),
                 _ => {}
             },
@@ -402,6 +419,7 @@ impl Core {
             }
             ACT_STOPWATCH_RESET => self.stopwatch.reset(),
             ACT_OPEN_STOPWATCH => self.open(PAGE_STOPWATCH),
+            ACT_OPEN_MENU => self.open(PAGE_MENU),
             _ => {}
         }
     }
@@ -413,6 +431,7 @@ impl Core {
             KEY_A_LONG => self.action(ACT_BACK, 0),
             KEY_B_LONG => {
                 if self.page == PAGE_WATCHFACE {
+                    self.settings_parent = PAGE_WATCHFACE;
                     self.open(PAGE_SETTINGS);
                 } else {
                     self.action(ACT_CONFIRM, 0);

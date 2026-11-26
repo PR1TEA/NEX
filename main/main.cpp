@@ -8,6 +8,7 @@
 #include <freertos/task.h>
 
 #include "board.h"
+#include "imu.h"
 #include "keys.h"
 #include "nex_core.h"
 #include "nex_rust.h"
@@ -33,6 +34,7 @@ extern "C" void app_main(void)
     }
 
     nex::services_init();
+    nex::imu_service_init();
     nex_core_init();
     ESP_LOGI(TAG, "core ready: clock=%s source=%ld page=%ld", nex_core_clock_valid() ? "valid" : "invalid",
              (long)nex_core_clock_source(), (long)nex_core_page());

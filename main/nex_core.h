@@ -25,6 +25,8 @@ typedef enum {
     NEX_PAGE_APPS = 6,
     NEX_PAGE_APP_RUNNER = 7,
     NEX_PAGE_STOPWATCH = 8,
+    NEX_PAGE_MENU = 9,
+    NEX_PAGE_GYRO = 10,
 } nex_page_t;
 
 typedef enum {
@@ -46,6 +48,7 @@ typedef enum {
     NEX_ACT_STOPWATCH_TOGGLE = 8,
     NEX_ACT_STOPWATCH_RESET = 9,
     NEX_ACT_OPEN_STOPWATCH = 10,
+    NEX_ACT_OPEN_MENU = 11,
 } nex_action_t;
 
 typedef enum {

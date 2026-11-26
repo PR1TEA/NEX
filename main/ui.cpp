@@ -8,6 +8,7 @@
  */
 #include "ui.h"
 
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -18,6 +19,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "imu.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -39,7 +41,7 @@ namespace {
 
 constexpr const char *TAG = "NEX-UI";
 
-constexpr int kPageCount = 9;
+constexpr int kPageCount = 11;
 constexpr uint32_t kTickMs = 20;
 
 SemaphoreHandle_t s_lvgl_mutex = nullptr;
@@ -57,6 +59,14 @@ lv_obj_t *s_time_invalid = nullptr;
 // Stopwatch
 lv_obj_t *s_sw_time = nullptr;
 lv_obj_t *s_sw_state = nullptr;
+
+// App menu / level
+lv_obj_t *s_menu_rows[4] = {};
+lv_obj_t *s_att_horizon = nullptr;
+lv_obj_t *s_att_cross_h = nullptr;
+lv_obj_t *s_att_cross_v = nullptr;
+lv_obj_t *s_gyro_label = nullptr;
+lv_point_precise_t s_horizon_pts[2] = {{20, 120}, {220, 120}};
 
 // Settings / developer / apps rows
 lv_obj_t *s_settings_rows[4] = {};
@@ -158,6 +168,10 @@ const char *page_title(int32_t page)
             return "BUILT-IN APPS";
         case NEX_PAGE_STOPWATCH:
             return "STOPWATCH";
+        case NEX_PAGE_MENU:
+            return "APPS";
+        case NEX_PAGE_GYRO:
+            return "ATTITUDE";
         default:
             return page_name(page);
     }
@@ -392,7 +406,7 @@ void watchface_click_cb(lv_event_t *event)
     if (nex_core_page() != NEX_PAGE_WATCHFACE) {
         return;
     }
-    nex_core_action(NEX_ACT_OPEN_STOPWATCH, 0);
+    nex_core_action(NEX_ACT_OPEN_MENU, 0);
     ui_sync();
 }
 
@@ -477,6 +491,78 @@ void build_stopwatch()
     make_button("Start/Stop", NEX_ACT_STOPWATCH_TOGGLE, -146);
     make_button("Reset", NEX_ACT_STOPWATCH_RESET, 0);
     make_button("Back", NEX_ACT_BACK, 146);
+}
+
+void build_menu()
+{
+    lv_obj_t *page = s_pages[NEX_PAGE_MENU];
+    static const char *items[] = {"Stopwatch", "Attitude", "Settings", "Back to Watchface"};
+    for (int i = 0; i < 4; ++i) {
+        s_menu_rows[i] = make_row(page, 96 + i * 64, NEX_ACT_SELECT, i, items[i], 20);
+        lv_obj_add_event_cb(s_menu_rows[i], row_event_cb, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_SELECT * 1000 + i)));
+    }
+}
+
+void build_gyro()
+{
+    lv_obj_t *page = s_pages[NEX_PAGE_GYRO];
+
+    lv_obj_t *ring = lv_obj_create(page);
+    lv_obj_set_size(ring, 250, 250);
+    lv_obj_align(ring, LV_ALIGN_CENTER, 0, -60);
+    lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ring, 2, 0);
+    lv_obj_set_style_border_color(ring, lv_color_hex(0x555555), 0);
+    lv_obj_set_style_pad_all(ring, 0, 0);
+    lv_obj_remove_flag(ring, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_att_horizon = lv_line_create(ring);
+    lv_obj_set_pos(s_att_horizon, 0, 0);
+    lv_line_set_points(s_att_horizon, s_horizon_pts, 2);
+    lv_obj_set_style_line_width(s_att_horizon, 3, 0);
+    lv_obj_set_style_line_color(s_att_horizon, lv_color_white(), 0);
+    lv_obj_set_style_line_rounded(s_att_horizon, true, 0);
+
+    static lv_point_precise_t cross_h[2] = {{105, 125}, {145, 125}};
+    static lv_point_precise_t cross_v[2] = {{125, 105}, {125, 145}};
+    s_att_cross_h = lv_line_create(ring);
+    lv_obj_set_pos(s_att_cross_h, 0, 0);
+    lv_line_set_points(s_att_cross_h, cross_h, 2);
+    lv_obj_set_style_line_width(s_att_cross_h, 2, 0);
+    lv_obj_set_style_line_color(s_att_cross_h, lv_color_hex(0xFFB020), 0);
+    lv_obj_set_style_line_rounded(s_att_cross_h, true, 0);
+
+    s_att_cross_v = lv_line_create(ring);
+    lv_obj_set_pos(s_att_cross_v, 0, 0);
+    lv_line_set_points(s_att_cross_v, cross_v, 2);
+    lv_obj_set_style_line_width(s_att_cross_v, 2, 0);
+    lv_obj_set_style_line_color(s_att_cross_v, lv_color_hex(0xFFB020), 0);
+    lv_obj_set_style_line_rounded(s_att_cross_v, true, 0);
+
+    s_gyro_label = lv_label_create(page);
+    lv_obj_set_width(s_gyro_label, 420);
+    lv_obj_set_style_text_align(s_gyro_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_gyro_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_gyro_label, lv_color_hex(0x9A9AA2), 0);
+    lv_obj_align(s_gyro_label, LV_ALIGN_CENTER, 0, 100);
+    lv_label_set_text(s_gyro_label, "ROLL +0   PITCH +0");
+
+    lv_obj_t *back = lv_button_create(page);
+    lv_obj_set_size(back, 150, 50);
+    lv_obj_align(back, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_set_style_radius(back, 12, 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(0x0D0D0D), 0);
+    lv_obj_set_style_border_width(back, 1, 0);
+    lv_obj_set_style_border_color(back, lv_color_hex(0x333333), 0);
+    lv_obj_add_event_cb(back, row_event_cb, LV_EVENT_CLICKED,
+                        reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_BACK * 1000)));
+    lv_obj_t *label = lv_label_create(back);
+    lv_label_set_text(label, "Back");
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_center(label);
 }
 
 void build_settings()
@@ -767,6 +853,46 @@ void refresh_watchface()
     lv_label_set_text(s_time_s, part);
 }
 
+void refresh_menu()
+{
+    const int sel = nex_core_selection();
+    for (int i = 0; i < 4; ++i) {
+        style_row_selected(s_menu_rows[i], i == sel);
+    }
+}
+
+void refresh_gyro()
+{
+    float ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
+    if (!imu_read(ax, ay, az, gx, gy, gz)) {
+        set_text_if_changed(s_gyro_label, "IMU NOT AVAILABLE");
+        return;
+    }
+
+    // Panel-mounted axes: X/Y are swapped and inverted relative to the screen.
+    const float screen_x = -ay;
+    const float screen_y = -ax;
+    const float roll = std::atan2(screen_x, az) * 57.2958f;
+    const float pitch = std::atan2(screen_y, std::sqrt(screen_x * screen_x + az * az)) * 57.2958f;
+
+    const float rad = roll * 0.0174533f;
+    const float dx = std::cos(rad);
+    const float dy = std::sin(rad);
+    float cy = 125.0f + pitch * 1.8f;
+    if (cy < 35.0f) cy = 35.0f;
+    if (cy > 215.0f) cy = 215.0f;
+    s_horizon_pts[0].x = 125.0f - dx * 95.0f;
+    s_horizon_pts[0].y = cy - dy * 95.0f;
+    s_horizon_pts[1].x = 125.0f + dx * 95.0f;
+    s_horizon_pts[1].y = cy + dy * 95.0f;
+    lv_line_set_points(s_att_horizon, s_horizon_pts, 2);
+
+    char buffer[96];
+    std::snprintf(buffer, sizeof(buffer), "ROLL %+.0f   PITCH %+.0f\nGZ %+.0f dps",
+                  (double)roll, (double)pitch, (double)gz);
+    set_text_if_changed(s_gyro_label, buffer);
+}
+
 void refresh_stopwatch()
 {
     static uint64_t last_tenth = ~0ull;
@@ -989,6 +1115,12 @@ void refresh_page(int page)
         case NEX_PAGE_STOPWATCH:
             refresh_stopwatch();
             break;
+        case NEX_PAGE_MENU:
+            refresh_menu();
+            break;
+        case NEX_PAGE_GYRO:
+            refresh_gyro();
+            break;
         case NEX_PAGE_SETTINGS:
             refresh_settings();
             break;
@@ -1078,6 +1210,9 @@ void ui_task(void *arg)
             if (s_current_page == NEX_PAGE_STOPWATCH) {
                 refresh_stopwatch();
             }
+            if (s_current_page == NEX_PAGE_GYRO) {
+                refresh_gyro();
+            }
             lv_timer_handler();
             xSemaphoreGive(s_lvgl_mutex);
         }
@@ -1166,7 +1301,9 @@ bool ui_start()
         s_pages[i] = make_page(i == NEX_PAGE_WATCHFACE ? nullptr : page_title(i));
     }
     build_watchface();
+    build_menu();
     build_stopwatch();
+    build_gyro();
     build_settings();
     build_time_editor();
     build_system_info();
