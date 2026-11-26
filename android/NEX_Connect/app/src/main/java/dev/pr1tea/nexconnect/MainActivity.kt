@@ -149,21 +149,6 @@ private fun NexApp(themeMode: String, onThemeChange: (String) -> Unit) {
         reminders.clear()
         reminders.addAll(parseReminders(prefs.getString("reminders", "") ?: ""))
     }
-    LaunchedEffect(connected) {
-        if (connected) {
-            syncState = "读取中…"
-            ble.getReminders { json ->
-                if (json != null) {
-                    reminders.clear()
-                    reminders.addAll(parseReminders(json))
-                    prefs.edit().putString("reminders", remindersToJson(reminders)).apply()
-                    syncState = "已同步"
-                } else {
-                    syncState = "读取失败"
-                }
-            }
-        }
-    }
 
     fun persist() {
         prefs.edit().putString("reminders", remindersToJson(reminders)).apply()
@@ -174,9 +159,19 @@ private fun NexApp(themeMode: String, onThemeChange: (String) -> Unit) {
             syncState = "未连接，改动已保存"
             return
         }
-        syncState = "同步中…"
+        if (reminders.isEmpty()) {
+            syncState = ""
+            return
+        }
+        syncState = "推送中…"
         ble.setReminders(remindersToJson(reminders)) { ok ->
-            syncState = if (ok) "已同步" else "同步失败"
+            if (ok) {
+                reminders.clear()
+                prefs.edit().putString("reminders", "").apply()
+                syncState = "已推送到手表"
+            } else {
+                syncState = "推送失败"
+            }
         }
     }
 
@@ -208,7 +203,7 @@ private fun NexApp(themeMode: String, onThemeChange: (String) -> Unit) {
             Screen.Main -> MainScreen(
                 connected = connected,
                 status = status,
-                pending = reminders.count { !it.done },
+                pending = 0,
                 onWallpaper = { screen = Screen.Wallpaper },
                 onReminders = { screen = Screen.Reminders },
                 onOptions = { screen = Screen.Options },
@@ -230,15 +225,9 @@ private fun NexApp(themeMode: String, onThemeChange: (String) -> Unit) {
                     persist()
                     sync()
                 },
-                onToggle = { index ->
-                    reminders[index] = reminders[index].copy(done = !reminders[index].done)
-                    persist()
-                    sync()
-                },
                 onDelete = { index ->
                     reminders.removeAt(index)
                     persist()
-                    sync()
                 },
             )
         }
@@ -398,7 +387,7 @@ private fun MainScreen(
                     Text("提醒事项", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        if (pending > 0) "$pending 项待办" else "暂无待办，点此添加",
+                        "推送到手表，手表端双击 A+B 完成",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -629,7 +618,6 @@ private fun RemindersScreen(
     onBack: () -> Unit,
     onAdd: (ReminderItem) -> Unit,
     onEdit: (Int, String) -> Unit,
-    onToggle: (Int) -> Unit,
     onDelete: (Int) -> Unit,
 ) {
     var dialog by remember { mutableStateOf<Pair<Int, String>?>(null) }
@@ -659,13 +647,11 @@ private fun RemindersScreen(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Checkbox(checked = item.done, onCheckedChange = { onToggle(index) })
                     Text(
                         text = item.text,
                         modifier = Modifier.weight(1f).clickable { dialog = index to item.text },
                         style = MaterialTheme.typography.bodyLarge,
-                        color = if (item.done) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onSurface,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     TextButton(onClick = { onDelete(index) }) { Text("删除") }
                 }

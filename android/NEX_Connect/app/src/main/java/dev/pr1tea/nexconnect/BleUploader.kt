@@ -15,10 +15,13 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import java.io.ByteArrayOutputStream
+import java.util.Calendar
+import java.util.TimeZone
 import java.util.UUID
 import kotlin.math.min
 
@@ -36,6 +39,7 @@ class BleUploader(
     private val remControlUuid: UUID = UUID.fromString("6e657865-0005-4e45-582d-574154434800")
     private val remDataUuid: UUID = UUID.fromString("6e657865-0006-4e45-582d-574154434800")
     private val remStatusUuid: UUID = UUID.fromString("6e657865-0007-4e45-582d-574154434800")
+    private val timeUuid: UUID = UUID.fromString("6e657865-0008-4e45-582d-574154434800")
     private val cccdUuid: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
     private var gatt: BluetoothGatt? = null
@@ -45,6 +49,7 @@ class BleUploader(
     private var remControl: BluetoothGattCharacteristic? = null
     private var remData: BluetoothGattCharacteristic? = null
     private var remStatus: BluetoothGattCharacteristic? = null
+    private var timeCharacteristic: BluetoothGattCharacteristic? = null
 
     private var remGetCallback: ((String?) -> Unit)? = null
     private var remGetBuffer = ByteArrayOutputStream()
@@ -112,6 +117,7 @@ class BleUploader(
             remControl = service.getCharacteristic(remControlUuid)
             remData = service.getCharacteristic(remDataUuid)
             remStatus = service.getCharacteristic(remStatusUuid)
+            timeCharacteristic = service.getCharacteristic(timeUuid)
             val notificationChar = remData
             if (notificationChar != null) {
                 g.setCharacteristicNotification(notificationChar, true)
@@ -133,6 +139,7 @@ class BleUploader(
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
             this@BleUploader.mtu = mtu
             ready = true
+            syncTime()
             main.post {
                 onConnection(true)
                 onStatus("已连接 NEX-Watch")
@@ -237,6 +244,7 @@ class BleUploader(
     }
 
     private fun finishRemSet(ok: Boolean) {
+        Log.d("NexBle", "reminder set result=$ok")
         val callback = remSetCallback
         remSetCallback = null
         remPhase = RemPhase.IDLE
@@ -270,6 +278,24 @@ class BleUploader(
         }, 15000)
     }
 
+    private fun syncTime() {
+        val characteristic = timeCharacteristic ?: return
+        val calendar = Calendar.getInstance()
+        val tzMinutes = TimeZone.getDefault().getOffset(calendar.timeInMillis) / 60000
+        val data = ByteArray(9)
+        val year = calendar.get(Calendar.YEAR)
+        data[0] = (year and 0xFF).toByte()
+        data[1] = ((year shr 8) and 0xFF).toByte()
+        data[2] = (calendar.get(Calendar.MONTH) + 1).toByte()
+        data[3] = calendar.get(Calendar.DAY_OF_MONTH).toByte()
+        data[4] = calendar.get(Calendar.HOUR_OF_DAY).toByte()
+        data[5] = calendar.get(Calendar.MINUTE).toByte()
+        data[6] = calendar.get(Calendar.SECOND).toByte()
+        data[7] = (tzMinutes and 0xFF).toByte()
+        data[8] = ((tzMinutes shr 8) and 0xFF).toByte()
+        write(characteristic, data)
+    }
+
     fun getReminders(callback: (String?) -> Unit) {
         if (!ready || remControl == null) {
             callback(null)
@@ -293,11 +319,12 @@ class BleUploader(
         remOffset = 0
         remPhase = RemPhase.START
         remSetCallback = callback
-        val start = ByteArray(5)
+        val start = ByteArray(6)
         start[0] = 0x21
         for (i in 0 until 4) {
             start[i + 1] = ((bytes.size ushr (8 * i)) and 0xFF).toByte()
         }
+        start[5] = 0x01
         if (!write(remControl!!, start)) {
             finishRemSet(false)
         }

@@ -20,6 +20,8 @@ bool reminders_init();
 int reminders_count();
 const Reminder *reminders_get(int index);
 bool reminders_toggle(int index);
+bool reminders_delete(int index);
+bool reminders_append_json(const char *json, size_t length);
 bool reminders_set_json(const char *json, size_t length);
 int reminders_to_json(char *out, size_t capacity);
 int reminders_generation();

@@ -912,16 +912,6 @@ void build_phone()
 
 void refresh_reminders();
 
-void reminder_row_cb(lv_event_t *event)
-{
-    if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
-        return;
-    }
-    const int index = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-    reminders_toggle(index);
-    refresh_reminders();
-}
-
 void refresh_reminders()
 {
     if (s_reminder_list == nullptr) {
@@ -951,25 +941,13 @@ void refresh_reminders()
         lv_obj_set_style_bg_color(row, lv_color_hex(0x141416), 0);
         lv_obj_set_style_border_width(row, i == selection ? 2 : 1, 0);
         lv_obj_set_style_border_color(row, i == selection ? lv_color_white() : lv_color_hex(0x3A3A40), 0);
-        lv_obj_add_event_cb(row, reminder_row_cb, LV_EVENT_CLICKED,
-                            reinterpret_cast<void *>(static_cast<intptr_t>(i)));
-
-        lv_obj_t *dot = lv_obj_create(row);
-        lv_obj_set_size(dot, 20, 20);
-        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_width(dot, 2, 0);
-        lv_obj_set_style_border_color(dot, lv_color_white(), 0);
-        lv_obj_set_style_bg_color(dot, lv_color_hex(0xFFD24A), 0);
-        lv_obj_set_style_bg_opa(dot, item->done ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        lv_obj_align(dot, LV_ALIGN_LEFT_MID, 16, 0);
-
         lv_obj_t *label = lv_label_create(row);
         lv_label_set_text(label, item->text);
-        lv_obj_set_width(label, 320);
+        lv_obj_set_width(label, 350);
         lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_font(label, &nex_cjk_text_16, 0);
-        lv_obj_set_style_text_color(label, item->done ? lv_color_hex(0x808080) : lv_color_white(), 0);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 52, 0);
+        lv_obj_set_style_text_color(label, lv_color_white(), 0);
+        lv_obj_align(label, LV_ALIGN_LEFT_MID, 24, 0);
 
         if (i == selection) {
             selected_row = row;
@@ -1727,7 +1705,18 @@ void ui_task(void *arg)
                 continue;
             }
             if (event == NEX_KEY_BOTH_CLICK && s_current_page == NEX_PAGE_REMINDERS) {
-                reminders_toggle(nex_core_selection());
+                static int64_t last_click_ms = 0;
+                static int last_index = -1;
+                const int64_t now = esp_timer_get_time() / 1000;
+                const int index = nex_core_selection();
+                if (index == last_index && now - last_click_ms < 700) {
+                    reminders_delete(index);
+                    last_click_ms = 0;
+                    last_index = -1;
+                } else {
+                    last_click_ms = now;
+                    last_index = index;
+                }
                 refresh_reminders();
                 dirty = true;
                 continue;

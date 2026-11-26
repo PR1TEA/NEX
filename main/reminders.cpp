@@ -65,6 +65,7 @@ bool save()
         const size_t written = std::fwrite(serialized, 1, length, file);
         std::fclose(file);
         if (written == length) {
+            std::remove(kPath);
             ok = std::rename(kTmpPath, kPath) == 0;
         }
     }
@@ -161,6 +162,51 @@ bool reminders_toggle(int index)
     s_items[index].done = !s_items[index].done;
     ++s_generation;
     return save();
+}
+
+bool reminders_delete(int index)
+{
+    if (index < 0 || index >= s_count) {
+        return false;
+    }
+    for (int i = index; i + 1 < s_count; ++i) {
+        s_items[i] = s_items[i + 1];
+    }
+    --s_count;
+    ++s_generation;
+    return save();
+}
+
+bool reminders_append_json(const char *json, size_t length)
+{
+    cJSON *root = cJSON_ParseWithLength(json, length);
+    if (root == nullptr) {
+        ESP_LOGW(TAG, "append: invalid JSON (%u bytes)", (unsigned)length);
+        return false;
+    }
+    cJSON *items = cJSON_GetObjectItem(root, "items");
+    if (!cJSON_IsArray(items)) {
+        ESP_LOGW(TAG, "append: no items array");
+        cJSON_Delete(root);
+        return false;
+    }
+    const int incoming = cJSON_GetArraySize(items);
+    ESP_LOGI(TAG, "append: %d item(s), have %d", incoming, s_count);
+    for (int i = 0; i < incoming && s_count < kReminderMax; ++i) {
+        cJSON *item = cJSON_GetArrayItem(items, i);
+        cJSON *text = cJSON_GetObjectItem(item, "text");
+        if (!cJSON_IsString(text) || text->valuestring == nullptr) {
+            continue;
+        }
+        copy_text(s_items[s_count].text, text->valuestring);
+        s_items[s_count].done = false;
+        ++s_count;
+    }
+    cJSON_Delete(root);
+    ++s_generation;
+    const bool ok = save();
+    ESP_LOGI(TAG, "append: save=%d count=%d", ok ? 1 : 0, s_count);
+    return ok;
 }
 
 bool reminders_set_json(const char *json, size_t length)

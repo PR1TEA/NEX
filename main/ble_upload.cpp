@@ -19,6 +19,7 @@
 #include "nimble/nimble_port_freertos.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "nex_core.h"
 #include "reminders.h"
 #include "wallpaper.h"
 
@@ -35,6 +36,7 @@ ble_uuid_any_t s_status_uuid;
 ble_uuid_any_t s_rem_control_uuid;
 ble_uuid_any_t s_rem_data_uuid;
 ble_uuid_any_t s_rem_status_uuid;
+ble_uuid_any_t s_time_uuid;
 
 uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 uint16_t s_control_handle = 0;
@@ -43,6 +45,8 @@ uint16_t s_status_handle = 0;
 uint16_t s_rem_control_handle = 0;
 uint16_t s_rem_data_handle = 0;
 uint16_t s_rem_status_handle = 0;
+uint16_t s_time_handle = 0;
+bool s_rem_append = false;
 uint8_t *s_rem_buffer = nullptr;
 uint32_t s_rem_length = 0;
 uint32_t s_rem_offset = 0;
@@ -99,7 +103,7 @@ void send_reminders()
 
 void handle_rem_control(struct ble_gatt_access_ctxt *ctxt)
 {
-    uint8_t command[5] = {};
+    uint8_t command[6] = {};
     const uint16_t length = OS_MBUF_PKTLEN(ctxt->om);
     os_mbuf_copydata(ctxt->om, 0, length < sizeof(command) ? length : sizeof(command), command);
 
@@ -115,18 +119,24 @@ void handle_rem_control(struct ble_gatt_access_ctxt *ctxt)
         if (s_rem_buffer != nullptr) {
             std::free(s_rem_buffer);
         }
+        s_rem_append = length >= 6 && command[5] == 1;
         s_rem_buffer = static_cast<uint8_t *>(heap_caps_malloc(total, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
         s_rem_length = (s_rem_buffer != nullptr && total <= 8192) ? total : 0;
         s_rem_offset = 0;
         s_rem_status = s_rem_length > 0 ? 1 : 3;
+        ESP_LOGI(TAG, "rem start: %u bytes append=%d", (unsigned)total, s_rem_append ? 1 : 0);
         return;
     }
     if (command[0] == 0x23) {
         bool ok = s_rem_buffer != nullptr && s_rem_offset == s_rem_length && s_rem_length > 0;
         if (ok) {
-            ok = reminders_set_json(reinterpret_cast<const char *>(s_rem_buffer), s_rem_length);
+            ok = s_rem_append
+                     ? reminders_append_json(reinterpret_cast<const char *>(s_rem_buffer), s_rem_length)
+                     : reminders_set_json(reinterpret_cast<const char *>(s_rem_buffer), s_rem_length);
         }
         s_rem_status = ok ? 2 : 3;
+        ESP_LOGI(TAG, "rem commit: %u/%u append=%d ok=%d", (unsigned)s_rem_offset,
+                 (unsigned)s_rem_length, s_rem_append ? 1 : 0, ok ? 1 : 0);
         if (s_rem_buffer != nullptr) {
             std::free(s_rem_buffer);
             s_rem_buffer = nullptr;
@@ -211,6 +221,20 @@ int gatt_access(uint16_t, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctx
 {
     if (attr_handle == s_rem_status_handle && ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         return os_mbuf_append(ctxt->om, &s_rem_status, 1) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
+    if (attr_handle == s_time_handle && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        uint8_t data[9] = {};
+        if (OS_MBUF_PKTLEN(ctxt->om) < sizeof(data)) {
+            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        }
+        os_mbuf_copydata(ctxt->om, 0, sizeof(data), data);
+        const int year = data[0] | (data[1] << 8);
+        const int tz = static_cast<int16_t>(data[7] | (data[8] << 8));
+        const int rc = nex_core_set_time(year, data[2], data[3], data[4], data[5], data[6], tz);
+        ESP_LOGI(TAG, "time sync %04d-%02d-%02d %02d:%02d:%02d tz=%d rc=%d", year, data[2], data[3],
+                 data[4], data[5], data[6], tz, rc);
+        return 0;
     }
 
     if (attr_handle == s_rem_control_handle && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
@@ -340,6 +364,12 @@ const struct ble_gatt_svc_def kServices[] = {
                 .flags = BLE_GATT_CHR_F_READ,
                 .val_handle = &s_rem_status_handle,
             },
+            {
+                .uuid = &s_time_uuid.u,
+                .access_cb = gatt_access,
+                .flags = BLE_GATT_CHR_F_WRITE,
+                .val_handle = &s_time_handle,
+            },
             {0},
         },
     },
@@ -375,7 +405,8 @@ bool ble_upload_init()
         ble_uuid_from_str(&s_status_uuid, "6e657865-0004-4e45-582d-574154434800") != 0 ||
         ble_uuid_from_str(&s_rem_control_uuid, "6e657865-0005-4e45-582d-574154434800") != 0 ||
         ble_uuid_from_str(&s_rem_data_uuid, "6e657865-0006-4e45-582d-574154434800") != 0 ||
-        ble_uuid_from_str(&s_rem_status_uuid, "6e657865-0007-4e45-582d-574154434800") != 0) {
+        ble_uuid_from_str(&s_rem_status_uuid, "6e657865-0007-4e45-582d-574154434800") != 0 ||
+        ble_uuid_from_str(&s_time_uuid, "6e657865-0008-4e45-582d-574154434800") != 0) {
         ESP_LOGE(TAG, "invalid UUID");
         return false;
     }
@@ -396,6 +427,7 @@ bool ble_upload_init()
 
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
+    s_want_advertising = true;
     nimble_port_freertos_init(host_task);
     ESP_LOGI(TAG, "BLE upload service initialized");
     return true;
