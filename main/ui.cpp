@@ -29,6 +29,8 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "draw/lv_image_decoder_private.h"
+#include "libs/tjpgd/tjpgd.h"
 #include "misc/cache/instance/lv_image_cache.h"
 #include "nex_core.h"
 
@@ -545,14 +547,103 @@ void cancel_event_cb(lv_event_t *event)
 }
 
 // ------------------------------------------------------------------- pages
+struct JpegMem {
+    const uint8_t *data;
+    size_t size;
+    size_t pos;
+};
+
+uint8_t *s_wall_pixels = nullptr;
+lv_image_dsc_t s_wall_dsc = {};
+int s_wall_stride = 0;
+
+size_t jpeg_mem_in(JDEC *jd, uint8_t *buff, size_t ndata)
+{
+    auto *ctx = static_cast<JpegMem *>(jd->device);
+    const size_t remain = ctx->size - ctx->pos;
+    const size_t count = ndata < remain ? ndata : remain;
+    if (buff != nullptr && count > 0) {
+        std::memcpy(buff, ctx->data + ctx->pos, count);
+    }
+    ctx->pos += count;
+    return count;
+}
+
+int jpeg_out(JDEC *, void *bitmap, JRECT *rect)
+{
+    const int width = rect->right - rect->left + 1;
+    const int height = rect->bottom - rect->top + 1;
+    const auto *src = static_cast<const uint8_t *>(bitmap);
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(s_wall_pixels + (rect->top + y) * s_wall_stride + rect->left * 3,
+                    src + y * width * 3, static_cast<size_t>(width) * 3);
+    }
+    return 1;
+}
+
+bool load_wallpaper_bitmap()
+{
+    FILE *file = std::fopen("/spiffs/wall.jpg", "rb");
+    if (file == nullptr) {
+        return false;
+    }
+    std::fseek(file, 0, SEEK_END);
+    const long size = std::ftell(file);
+    std::fseek(file, 0, SEEK_SET);
+    auto *data = static_cast<uint8_t *>(std::malloc(static_cast<size_t>(size)));
+    if (data == nullptr) {
+        std::fclose(file);
+        return false;
+    }
+    const size_t read = std::fread(data, 1, static_cast<size_t>(size), file);
+    std::fclose(file);
+
+    JpegMem ctx = {data, read, 0};
+    JDEC jd = {};
+    uint8_t work[4096];
+    JRESULT rc = jd_prepare(&jd, jpeg_mem_in, work, sizeof(work), &ctx);
+    if (rc != JDR_OK) {
+        ESP_LOGW(TAG, "jpeg prepare failed: %d", rc);
+        std::free(data);
+        return false;
+    }
+    const size_t pixels = static_cast<size_t>(jd.width) * jd.height * 3;
+    auto *output = static_cast<uint8_t *>(std::malloc(pixels));
+    if (output == nullptr) {
+        std::free(data);
+        return false;
+    }
+    s_wall_pixels = output;
+    s_wall_stride = jd.width * 3;
+    rc = jd_decomp(&jd, jpeg_out, 0);
+    std::free(data);
+    if (rc != JDR_OK) {
+        ESP_LOGW(TAG, "jpeg decode failed: %d", rc);
+        std::free(output);
+        s_wall_pixels = nullptr;
+        return false;
+    }
+
+    std::memset(&s_wall_dsc, 0, sizeof(s_wall_dsc));
+    s_wall_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+    s_wall_dsc.header.cf = LV_COLOR_FORMAT_RGB888;
+    s_wall_dsc.header.w = jd.width;
+    s_wall_dsc.header.h = jd.height;
+    s_wall_dsc.header.stride = jd.width * 3;
+    s_wall_dsc.data_size = pixels;
+    s_wall_dsc.data = output;
+    ESP_LOGI(TAG, "wallpaper decoded %ux%u", (unsigned)jd.width, (unsigned)jd.height);
+    return true;
+}
+
 void build_watchface()
 {
     lv_obj_t *page = s_pages[NEX_PAGE_WATCHFACE];
 
     s_wallpaper = lv_image_create(page);
     lv_obj_align(s_wallpaper, LV_ALIGN_CENTER, 0, 0);
-    if (wallpaper_exists()) {
-        lv_image_set_src(s_wallpaper, wallpaper_lvgl_path());
+    if (load_wallpaper_bitmap()) {
+        lv_image_set_src(s_wallpaper, &s_wall_dsc);
     } else {
         lv_obj_add_flag(s_wallpaper, LV_OBJ_FLAG_HIDDEN);
     }
@@ -1755,9 +1846,8 @@ void ui_task(void *arg)
                 const int generation = wallpaper_generation();
                 if (generation != s_wall_gen && s_wallpaper != nullptr) {
                     s_wall_gen = generation;
-                    if (wallpaper_exists()) {
-                        lv_image_cache_drop(wallpaper_lvgl_path());
-                        lv_image_set_src(s_wallpaper, wallpaper_lvgl_path());
+                    if (load_wallpaper_bitmap()) {
+                        lv_image_set_src(s_wallpaper, &s_wall_dsc);
                         lv_obj_align(s_wallpaper, LV_ALIGN_CENTER, 0, 0);
                         lv_obj_remove_flag(s_wallpaper, LV_OBJ_FLAG_HIDDEN);
                     } else {
@@ -1777,6 +1867,7 @@ void ui_task(void *arg)
 bool ui_start()
 {
     lv_init();
+    wallpaper_lvgl_fs_init();
 
     lv_display_t *disp = lv_display_create(468, 466);
     if (disp == nullptr) {

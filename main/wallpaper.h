@@ -14,5 +14,6 @@ bool wallpaper_exists();
 bool wallpaper_save(const uint8_t *data, size_t length);
 int wallpaper_generation();
 const char *wallpaper_lvgl_path();
+void wallpaper_lvgl_fs_init();
 
 }  // namespace nex
