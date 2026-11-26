@@ -513,6 +513,11 @@ lgfx::LGFX_Device &board_display()
     return s_display;
 }
 
+i2c_master_bus_handle_t board_i2c_bus()
+{
+    return s_bus;
+}
+
 bool board_touch_init()
 {
     return s_touch_ok;

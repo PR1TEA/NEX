@@ -5,19 +5,15 @@
  * KEYA = GPIO2, KEYB = GPIO1, both active low with internal pull-ups
  * (M5StopWatch-UserDemo 0.5, main/hal/hal_button.cpp).
  *
- * A dedicated task polls every 10 ms. A key changes its debounced state only
- * after the raw level has been stable for 25 ms. Long press is measured from
- * the monotonic esp_timer clock, never by blocking.
+ * Dedicated 10 ms task, 25 ms debounce, monotonic 1000 ms long-press.
  *
- * Event rules:
- *   - both keys stable-down -> BOTH PRESSED (single keys are suppressed)
- *   - single key stable-down -> KEYA/KEYB PRESSED
- *   - 1000 ms stable hold    -> LONG PRESS, emitted once per press cycle
- *   - after a combo ends, a key that is still held is "used in combo" and
- *     produces no single-key press/long event until it is released
- *
- * The task never touches LVGL: status text is posted to the UI task through a
- * queue and applied there under the LVGL mutex.
+ * Events produced for navigation (queued to the UI task):
+ *   KEYA/KEYB CLICK  — released before the long-press threshold
+ *   KEYA/KEYB LONG   — emitted once at 1000 ms
+ *   BOTH LONG        — both keys held 1000 ms
+ * PRESSED / BOTH PRESSED are still logged for the Task 002 regression but are
+ * deliberately NOT turned into actions, so a long press cannot execute a
+ * short-press action early. Combo state suppresses single-key events.
  */
 #include "keys.h"
 
@@ -26,6 +22,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nex_core.h"
 #include "ui.h"
 
 namespace nex {
@@ -61,13 +58,6 @@ int64_t now_ms()
     return esp_timer_get_time() / 1000;
 }
 
-void emit(const char *log_text, const char *status_text)
-{
-    ESP_LOGI(TAG, "%s", log_text);
-    ui_post_status(status_text);
-}
-
-// Returns true when the debounced state changed on this sample.
 bool update_key(KeyState &key, bool raw_down, int64_t now)
 {
     if (raw_down != key.raw_down) {
@@ -96,17 +86,15 @@ void handle_press_events(bool a_changed, bool b_changed, int64_t now)
         s_combo_active = true;
         s_combo_since_ms = now;
         s_combo_long_fired = false;
-        // From now on neither key may generate a single-key event.
         s_key_a.used_in_combo = true;
         s_key_b.used_in_combo = true;
-        emit("BOTH PRESSED", "KEYA + KEYB: PRESSED");
+        ESP_LOGI(TAG, "BOTH PRESSED");
         return;
     }
 
     if (!both && s_combo_active) {
         s_combo_active = false;
         s_combo_long_fired = false;
-        // The key still held after the combo must not turn into a single press.
         if (s_key_a.stable_down) {
             s_key_a.used_in_combo = true;
         }
@@ -118,11 +106,23 @@ void handle_press_events(bool a_changed, bool b_changed, int64_t now)
     if (s_combo_active) {
         return;
     }
+
     if (a_changed && s_key_a.stable_down && !s_key_b.stable_down && !s_key_a.used_in_combo) {
-        emit("KEYA PRESSED", "KEYA: PRESSED");
+        ESP_LOGI(TAG, "KEYA PRESSED");
     }
     if (b_changed && s_key_b.stable_down && !s_key_a.stable_down && !s_key_b.used_in_combo) {
-        emit("KEYB PRESSED", "KEYB: PRESSED");
+        ESP_LOGI(TAG, "KEYB PRESSED");
+    }
+
+    // Click is only produced on release, so PRESSED can never drive a page
+    // transition while the key is still heading towards a long press.
+    if (a_changed && !s_key_a.stable_down && !s_key_a.used_in_combo && !s_key_a.long_fired) {
+        ESP_LOGI(TAG, "KEYA CLICK");
+        ui_post_key_event(NEX_KEY_A_CLICK);
+    }
+    if (b_changed && !s_key_b.stable_down && !s_key_b.used_in_combo && !s_key_b.long_fired) {
+        ESP_LOGI(TAG, "KEYB CLICK");
+        ui_post_key_event(NEX_KEY_B_CLICK);
     }
 }
 
@@ -133,7 +133,8 @@ void handle_long_press(int64_t now)
     if (s_combo_active && both) {
         if (!s_combo_long_fired && now - s_combo_since_ms >= kLongPressMs) {
             s_combo_long_fired = true;
-            emit("BOTH LONG PRESS (1000ms)", "KEYA + KEYB: LONG PRESS (1s)");
+            ESP_LOGI(TAG, "BOTH LONG PRESS (1000ms)");
+            ui_post_key_event(NEX_KEY_BOTH_LONG);
         }
         return;
     }
@@ -145,12 +146,14 @@ void handle_long_press(int64_t now)
     if (s_key_a.stable_down && !s_key_b.stable_down && !s_key_a.used_in_combo && !s_key_a.long_fired &&
         now - s_key_a.down_since_ms >= kLongPressMs) {
         s_key_a.long_fired = true;
-        emit("KEYA LONG PRESS (1000ms)", "KEYA: LONG PRESS (1s)");
+        ESP_LOGI(TAG, "KEYA LONG PRESS (1000ms)");
+        ui_post_key_event(NEX_KEY_A_LONG);
     }
     if (s_key_b.stable_down && !s_key_a.stable_down && !s_key_b.used_in_combo && !s_key_b.long_fired &&
         now - s_key_b.down_since_ms >= kLongPressMs) {
         s_key_b.long_fired = true;
-        emit("KEYB LONG PRESS (1000ms)", "KEYB: LONG PRESS (1s)");
+        ESP_LOGI(TAG, "KEYB LONG PRESS (1000ms)");
+        ui_post_key_event(NEX_KEY_B_LONG);
     }
 }
 

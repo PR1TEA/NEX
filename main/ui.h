@@ -4,14 +4,16 @@
  */
 #pragma once
 
+#include <cstdint>
+
 namespace nex {
 
 // Build the Hello World UI and start the LVGL task.
 // Returns false if the display or the draw buffers cannot be set up.
 bool ui_start();
 
-// Post a status string to the LVGL thread. Safe to call from any task; the
-// string is queued and applied inside the UI task under the LVGL mutex.
-void ui_post_status(const char *text);
+// Queue a physical key event for the UI task. The UI task forwards it to the
+// Rust core; LVGL is never touched from the key task.
+void ui_post_key_event(int32_t event);
 
 }  // namespace nex

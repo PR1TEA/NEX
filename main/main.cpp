@@ -9,7 +9,9 @@
 
 #include "board.h"
 #include "keys.h"
+#include "nex_core.h"
 #include "nex_rust.h"
+#include "services.h"
 #include "ui.h"
 
 static const char *TAG = "NEX";
@@ -29,6 +31,11 @@ extern "C" void app_main(void)
         vTaskDelay(portMAX_DELAY);
         return;
     }
+
+    nex::services_init();
+    nex_core_init();
+    ESP_LOGI(TAG, "core ready: clock=%s source=%ld page=%ld", nex_core_clock_valid() ? "valid" : "invalid",
+             (long)nex_core_clock_source(), (long)nex_core_page());
 
     if (!nex::ui_start()) {
         ESP_LOGE(TAG, "UI init failed - system halted");

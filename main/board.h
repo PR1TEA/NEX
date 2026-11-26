@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <M5GFX.h>
+#include "driver/i2c_master.h"
 
 namespace nex {
 
@@ -19,6 +20,9 @@ bool board_init();
 
 // Display object owned by the board layer (valid after board_init()).
 lgfx::LGFX_Device &board_display();
+
+// System I2C bus (valid after board_init()); used by the RTC service.
+i2c_master_bus_handle_t board_i2c_bus();
 
 // CST820 is optional at the board level: on failure the UI still comes up
 // and reports the failure instead of hanging.
