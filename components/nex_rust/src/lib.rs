@@ -47,6 +47,7 @@ const KEY_B_CLICK: i32 = 2;
 const KEY_A_LONG: i32 = 3;
 const KEY_B_LONG: i32 = 4;
 const KEY_BOTH_LONG: i32 = 5;
+const KEY_BOTH_CLICK: i32 = 6;
 
 // ---------------------------------------------------------------- settings
 const SETTINGS_MAGIC: &[u8; 4] = b"NEXS";
@@ -437,7 +438,18 @@ impl Core {
                     self.action(ACT_CONFIRM, 0);
                 }
             }
-            KEY_BOTH_LONG => self.action(ACT_HOME, 0),
+            KEY_BOTH_CLICK => {
+                if matches!(self.page, PAGE_MENU | PAGE_SETTINGS | PAGE_DEVELOPER | PAGE_APPS) {
+                    self.action(ACT_CONFIRM, 0);
+                }
+            }
+            KEY_BOTH_LONG => {
+                if self.page == PAGE_WATCHFACE {
+                    self.open(PAGE_MENU);
+                } else {
+                    self.action(ACT_HOME, 0);
+                }
+            }
             _ => {}
         }
     }

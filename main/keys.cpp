@@ -93,8 +93,13 @@ void handle_press_events(bool a_changed, bool b_changed, int64_t now)
     }
 
     if (!both && s_combo_active) {
+        const bool was_long = s_combo_long_fired;
         s_combo_active = false;
         s_combo_long_fired = false;
+        if (!was_long) {
+            ESP_LOGI(TAG, "BOTH CLICK");
+            ui_post_key_event(NEX_KEY_BOTH_CLICK);
+        }
         if (s_key_a.stable_down) {
             s_key_a.used_in_combo = true;
         }

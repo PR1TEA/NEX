@@ -35,6 +35,8 @@
 extern "C" const lv_font_t nex_font_64_bold;
 extern "C" const lv_font_t nex_font_64_regular;
 extern "C" const lv_font_t nex_font_40_regular;
+extern "C" const lv_font_t nex_cjk_20;
+extern "C" const lv_font_t nex_cjk_16;
 
 namespace nex {
 namespace {
@@ -55,6 +57,10 @@ lv_obj_t *s_time_h = nullptr;
 lv_obj_t *s_time_m = nullptr;
 lv_obj_t *s_time_s = nullptr;
 lv_obj_t *s_time_invalid = nullptr;
+lv_point_precise_t s_wf_hour_pts[2] = {{230, 230}, {230, 120}};
+lv_point_precise_t s_wf_min_pts[2] = {{230, 230}, {230, 80}};
+lv_point_precise_t s_wf_sec_pts[2] = {{230, 230}, {230, 45}};
+lv_point_precise_t s_wf_tick_pts[60][2];
 
 // Stopwatch
 lv_obj_t *s_sw_time = nullptr;
@@ -161,17 +167,17 @@ const char *page_title(int32_t page)
 {
     switch (page) {
         case NEX_PAGE_TIME_EDITOR:
-            return "TIME & DATE";
+            return "时间与日期";
         case NEX_PAGE_INPUT_DIAG:
             return "INPUT EVENTS";
         case NEX_PAGE_APPS:
             return "BUILT-IN APPS";
         case NEX_PAGE_STOPWATCH:
-            return "STOPWATCH";
+            return "秒表";
         case NEX_PAGE_MENU:
-            return "APPS";
+            return "应用";
         case NEX_PAGE_GYRO:
-            return "ATTITUDE";
+            return "姿态仪";
         default:
             return page_name(page);
     }
@@ -183,7 +189,7 @@ const char *page_name(int32_t page)
         case NEX_PAGE_WATCHFACE:
             return "WATCHFACE";
         case NEX_PAGE_SETTINGS:
-            return "SETTINGS";
+            return "设置";
         case NEX_PAGE_TIME_EDITOR:
             return "TIME EDITOR";
         case NEX_PAGE_SYSTEM_INFO:
@@ -215,7 +221,7 @@ lv_obj_t *make_page(const char *title)
     if (title != nullptr) {
         lv_obj_t *label = lv_label_create(page);
         lv_label_set_text(label, title);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+        lv_obj_set_style_text_font(label, &nex_cjk_20, 0);
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
         lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 22);
     }
@@ -225,9 +231,9 @@ lv_obj_t *make_page(const char *title)
 lv_obj_t *make_row(lv_obj_t *parent, int y, int action, int arg, const char *text, int font)
 {
     lv_obj_t *row = lv_button_create(parent);
-    lv_obj_set_size(row, 400, 54);
+    lv_obj_set_size(row, 380, 64);
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
-    lv_obj_set_style_radius(row, 12, 0);
+    lv_obj_set_style_radius(row, 32, 0);
     lv_obj_set_style_bg_color(row, lv_color_hex(0x0D0D0D), 0);
     lv_obj_set_style_border_width(row, 1, 0);
     lv_obj_set_style_border_color(row, lv_color_hex(0x333333), 0);
@@ -235,9 +241,12 @@ lv_obj_t *make_row(lv_obj_t *parent, int y, int action, int arg, const char *tex
 
     lv_obj_t *label = lv_label_create(row);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, font == 20 ? &lv_font_montserrat_20 : &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(label, font == 20 ? &nex_cjk_20 : &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_align(label, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_set_width(label, 340);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+    lv_obj_center(label);
     return row;
 }
 
@@ -253,7 +262,7 @@ void set_row_label(lv_obj_t *row, const char *text, int font)
     lv_obj_t *label = lv_obj_get_child(row, 0);
     if (label != nullptr) {
         lv_label_set_text(label, text);
-        lv_obj_set_style_text_font(label, font == 20 ? &lv_font_montserrat_20 : &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(label, font == 20 ? &nex_cjk_20 : &lv_font_montserrat_16, 0);
     }
 }
 
@@ -381,7 +390,7 @@ void save_event_cb(lv_event_t *event)
     } else {
         char message[64] = {};
         nex_core_last_error(message, sizeof(message));
-        std::snprintf(s_edit.error, sizeof(s_edit.error), "%.*s (rc %d)", 60, message, rc);
+        std::snprintf(s_edit.error, sizeof(s_edit.error), "保存失败 (rc %d)", rc);
         add_event("TIME SAVE FAILED");
         ui_sync();
     }
@@ -398,62 +407,76 @@ void cancel_event_cb(lv_event_t *event)
 }
 
 // ------------------------------------------------------------------- pages
-void watchface_click_cb(lv_event_t *event)
-{
-    if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
-        return;
-    }
-    if (nex_core_page() != NEX_PAGE_WATCHFACE) {
-        return;
-    }
-    nex_core_action(NEX_ACT_OPEN_MENU, 0);
-    ui_sync();
-}
-
 void build_watchface()
 {
     lv_obj_t *page = s_pages[NEX_PAGE_WATCHFACE];
-    lv_obj_add_event_cb(page, watchface_click_cb, LV_EVENT_CLICKED, nullptr);
 
-    lv_obj_t *row = lv_obj_create(page);
-    lv_obj_set_size(row, 460, 90);
-    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_pad_all(row, 0, 0);
-    lv_obj_set_style_pad_column(row, 0, 0);
-    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER);
-    lv_obj_align(row, LV_ALIGN_CENTER, 0, -20);
-    auto make_digit = [&](int width, const lv_font_t *font, bool bold) {
-        lv_obj_t *label = lv_label_create(row);
-        lv_obj_set_width(label, width);
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_font(label, font, 0);
-        lv_obj_set_style_text_color(label, lv_color_white(), 0);
-        lv_label_set_text(label, "00");
-        if (bold) {
-            lv_obj_set_style_text_outline_stroke_width(label, 2, 0);
-            lv_obj_set_style_text_outline_stroke_color(label, lv_color_white(), 0);
-        }
-        return label;
+    lv_obj_t *dial = lv_obj_create(page);
+    lv_obj_set_size(dial, 460, 460);
+    lv_obj_align(dial, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_opa(dial, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(dial, 0, 0);
+    lv_obj_set_style_pad_all(dial, 0, 0);
+    lv_obj_remove_flag(dial, LV_OBJ_FLAG_SCROLLABLE);
+
+    constexpr float kCenter = 230.0f;
+    constexpr float kPi = 3.14159265f;
+    for (int i = 0; i < 60; ++i) {
+        const float angle = (static_cast<float>(i) * 6.0f - 90.0f) * kPi / 180.0f;
+        const bool major = (i % 5) == 0;
+        const float outer = 218.0f;
+        const float inner = outer - (major ? 24.0f : 10.0f);
+        s_wf_tick_pts[i][0] = {static_cast<lv_value_precise_t>(kCenter + std::cos(angle) * inner),
+                               static_cast<lv_value_precise_t>(kCenter + std::sin(angle) * inner)};
+        s_wf_tick_pts[i][1] = {static_cast<lv_value_precise_t>(kCenter + std::cos(angle) * outer),
+                               static_cast<lv_value_precise_t>(kCenter + std::sin(angle) * outer)};
+
+        lv_obj_t *tick = lv_line_create(dial);
+        lv_obj_set_pos(tick, 0, 0);
+        lv_line_set_points(tick, s_wf_tick_pts[i], 2);
+        lv_obj_set_style_line_width(tick, major ? 3 : 1, 0);
+        lv_obj_set_style_line_color(tick, lv_color_hex(major ? 0xFFFFFF : 0x666666), 0);
+        lv_obj_set_style_line_rounded(tick, true, 0);
+    }
+
+    auto make_hand = [&](lv_point_precise_t *points, int width, lv_color_t color) {
+        lv_obj_t *hand = lv_line_create(dial);
+        lv_obj_set_pos(hand, 0, 0);
+        lv_line_set_points(hand, points, 2);
+        lv_obj_set_style_line_width(hand, width, 0);
+        lv_obj_set_style_line_color(hand, color, 0);
+        lv_obj_set_style_line_rounded(hand, true, 0);
+        return hand;
     };
-    s_time_h = make_digit(90, &nex_font_64_bold, false);
-    s_time_m = make_digit(90, &nex_font_64_regular, false);
-    s_time_s = make_digit(58, &nex_font_40_regular, false);
+    s_time_h = make_hand(s_wf_hour_pts, 9, lv_color_white());
+    s_time_m = make_hand(s_wf_min_pts, 6, lv_color_white());
+    s_time_s = make_hand(s_wf_sec_pts, 2, lv_color_hex(0xFFB020));
+
+    lv_obj_t *cap = lv_obj_create(dial);
+    lv_obj_set_size(cap, 14, 14);
+    lv_obj_set_style_radius(cap, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(cap, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(cap, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(cap, 0, 0);
+    lv_obj_align(cap, LV_ALIGN_CENTER, 0, 0);
 
     s_time_invalid = lv_label_create(page);
-    lv_label_set_text(s_time_invalid, "------");
-    lv_obj_set_style_text_font(s_time_invalid, &nex_font_64_regular, 0);
+    lv_label_set_text(s_time_invalid, "时间未设置");
+    lv_obj_set_style_text_font(s_time_invalid, &nex_cjk_20, 0);
     lv_obj_set_style_text_color(s_time_invalid, lv_color_white(), 0);
-    lv_obj_align(s_time_invalid, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_align(s_time_invalid, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(s_time_invalid, LV_OBJ_FLAG_HIDDEN);
+}
 
-    lv_obj_t *hint = lv_label_create(page);
-    lv_label_set_text(hint, "TAP: STOPWATCH   HOLD B: SETTINGS");
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x777777), 0);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -40);
+void build_menu()
+{
+    lv_obj_t *page = s_pages[NEX_PAGE_MENU];
+    static const char *items[] = {"秒表", "姿态仪", "设置", "返回表盘"};
+    for (int i = 0; i < 4; ++i) {
+        s_menu_rows[i] = make_row(page, 96 + i * 64, NEX_ACT_SELECT, i, items[i], 20);
+        lv_obj_add_event_cb(s_menu_rows[i], row_event_cb, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_SELECT * 1000 + i)));
+    }
 }
 
 void build_stopwatch()
@@ -467,8 +490,8 @@ void build_stopwatch()
     lv_obj_align(s_sw_time, LV_ALIGN_CENTER, 0, -60);
 
     s_sw_state = lv_label_create(page);
-    lv_label_set_text(s_sw_state, "READY");
-    lv_obj_set_style_text_font(s_sw_state, &lv_font_montserrat_16, 0);
+    lv_label_set_text(s_sw_state, "就绪");
+    lv_obj_set_style_text_font(s_sw_state, &nex_cjk_16, 0);
     lv_obj_set_style_text_color(s_sw_state, lv_color_hex(0x9A9AA2), 0);
     lv_obj_align(s_sw_state, LV_ALIGN_CENTER, 0, 4);
 
@@ -476,32 +499,21 @@ void build_stopwatch()
         lv_obj_t *button = lv_button_create(page);
         lv_obj_set_size(button, 132, 56);
         lv_obj_align(button, LV_ALIGN_BOTTOM_MID, x_ofs, -100);
-        lv_obj_set_style_radius(button, 12, 0);
-        lv_obj_set_style_bg_color(button, lv_color_hex(0x0D0D0D), 0);
+        lv_obj_set_style_radius(button, 28, 0);
+        lv_obj_set_style_bg_color(button, lv_color_hex(0x141414), 0);
         lv_obj_set_style_border_width(button, 1, 0);
-        lv_obj_set_style_border_color(button, lv_color_hex(0x333333), 0);
+        lv_obj_set_style_border_color(button, lv_color_hex(0x3A3A3A), 0);
         lv_obj_add_event_cb(button, row_event_cb, LV_EVENT_CLICKED,
                             reinterpret_cast<void *>(static_cast<intptr_t>(action * 1000)));
         lv_obj_t *label = lv_label_create(button);
         lv_label_set_text(label, text);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(label, &nex_cjk_16, 0);
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
         lv_obj_center(label);
     };
-    make_button("Start/Stop", NEX_ACT_STOPWATCH_TOGGLE, -146);
-    make_button("Reset", NEX_ACT_STOPWATCH_RESET, 0);
-    make_button("Back", NEX_ACT_BACK, 146);
-}
-
-void build_menu()
-{
-    lv_obj_t *page = s_pages[NEX_PAGE_MENU];
-    static const char *items[] = {"Stopwatch", "Attitude", "Settings", "Back to Watchface"};
-    for (int i = 0; i < 4; ++i) {
-        s_menu_rows[i] = make_row(page, 96 + i * 64, NEX_ACT_SELECT, i, items[i], 20);
-        lv_obj_add_event_cb(s_menu_rows[i], row_event_cb, LV_EVENT_CLICKED,
-                            reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_SELECT * 1000 + i)));
-    }
+    make_button("开始/暂停", NEX_ACT_STOPWATCH_TOGGLE, -146);
+    make_button("归零", NEX_ACT_STOPWATCH_RESET, 0);
+    make_button("返回", NEX_ACT_BACK, 146);
 }
 
 void build_gyro()
@@ -568,7 +580,7 @@ void build_gyro()
 void build_settings()
 {
     lv_obj_t *page = s_pages[NEX_PAGE_SETTINGS];
-    static const char *items[] = {"Time & Date", "System Info", "Developer Options", "Back to Watchface"};
+    static const char *items[] = {"时间与日期", "系统信息", "开发者选项", "返回表盘"};
     for (int i = 0; i < 4; ++i) {
         s_settings_rows[i] = make_row(page, 96 + i * 64, NEX_ACT_SELECT, i, items[i], 20);
         lv_obj_add_event_cb(s_settings_rows[i], row_event_cb, LV_EVENT_CLICKED,
@@ -616,7 +628,7 @@ void build_time_editor()
                             reinterpret_cast<void *>(static_cast<intptr_t>(i)));
 
         lv_obj_t *label = lv_label_create(button);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+        lv_obj_set_style_text_font(label, &nex_cjk_20, 0);
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
         lv_label_set_text(label, "00");
         lv_obj_center(label);
@@ -837,20 +849,28 @@ void refresh_watchface()
         lv_obj_remove_flag(s_time_invalid, LV_OBJ_FLAG_HIDDEN);
         return;
     }
-
     lv_obj_remove_flag(s_time_h, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_time_m, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_time_s, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_time_invalid, LV_OBJ_FLAG_HIDDEN);
 
-    char part[3] = {digits[0], digits[1], 0};
-    lv_label_set_text(s_time_h, part);
-    part[0] = digits[2];
-    part[1] = digits[3];
-    lv_label_set_text(s_time_m, part);
-    part[0] = digits[4];
-    part[1] = digits[5];
-    lv_label_set_text(s_time_s, part);
+    const float hour = (digits[0] - '0') * 10 + (digits[1] - '0');
+    const float minute = (digits[2] - '0') * 10 + (digits[3] - '0');
+    const float second = (digits[4] - '0') * 10 + (digits[5] - '0');
+    constexpr float kPi = 3.14159265f;
+    constexpr float kCenter = 230.0f;
+
+    auto set_hand = [&](lv_point_precise_t *points, lv_obj_t *hand, float degrees, float length) {
+        const float angle = (degrees - 90.0f) * kPi / 180.0f;
+        points[0].x = static_cast<lv_value_precise_t>(kCenter);
+        points[0].y = static_cast<lv_value_precise_t>(kCenter);
+        points[1].x = static_cast<lv_value_precise_t>(kCenter + std::cos(angle) * length);
+        points[1].y = static_cast<lv_value_precise_t>(kCenter + std::sin(angle) * length);
+        lv_line_set_points(hand, points, 2);
+    };
+    set_hand(s_wf_hour_pts, s_time_h, (hour + minute / 60.0f) * 30.0f, 105.0f);
+    set_hand(s_wf_min_pts, s_time_m, (minute + second / 60.0f) * 6.0f, 150.0f);
+    set_hand(s_wf_sec_pts, s_time_s, second * 6.0f, 185.0f);
 }
 
 void refresh_menu()
@@ -888,7 +908,7 @@ void refresh_gyro()
     lv_line_set_points(s_att_horizon, s_horizon_pts, 2);
 
     char buffer[96];
-    std::snprintf(buffer, sizeof(buffer), "ROLL %+.0f   PITCH %+.0f\nGZ %+.0f dps",
+    std::snprintf(buffer, sizeof(buffer), "横滚 %+.0f   俯仰 %+.0f\nGZ %+.0f dps",
                   (double)roll, (double)pitch, (double)gz);
     set_text_if_changed(s_gyro_label, buffer);
 }
@@ -917,7 +937,7 @@ void refresh_stopwatch()
                       static_cast<unsigned long long>(seconds), static_cast<unsigned long long>(fraction));
     }
     set_text_if_changed(s_sw_time, buffer);
-    const char *state = nex_core_stopwatch_running() ? "RUNNING" : (ms == 0 ? "READY" : "STOPPED");
+    const char *state = nex_core_stopwatch_running() ? "运行中" : (ms == 0 ? "就绪" : "已暂停");
     set_text_if_changed(s_sw_state, state);
 }
 

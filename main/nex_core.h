@@ -35,6 +35,7 @@ typedef enum {
     NEX_KEY_A_LONG = 3,
     NEX_KEY_B_LONG = 4,
     NEX_KEY_BOTH_LONG = 5,
+    NEX_KEY_BOTH_CLICK = 6,
 } nex_key_event_t;
 
 typedef enum {

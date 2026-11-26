@@ -6,6 +6,8 @@ idf_component_register(
         "imu.cpp"
         "services.cpp"
         "ui.cpp"
+        "fonts/nex_cjk_16.c"
+        "fonts/nex_cjk_20.c"
         "fonts/nex_font_64_bold.c"
         "fonts/nex_font_64_regular.c"
         "fonts/nex_font_40_regular.c"
