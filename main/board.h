@@ -24,6 +24,9 @@ lgfx::LGFX_Device &board_display();
 // System I2C bus (valid after board_init()); used by the RTC service.
 i2c_master_bus_handle_t board_i2c_bus();
 
+// Enable the AW8737A speaker amplifier (M5IOE1 pin 10 + GPIO14).
+bool board_speaker_enable(bool enable);
+
 // CST820 is optional at the board level: on failure the UI still comes up
 // and reports the failure instead of hanging.
 bool board_touch_init();

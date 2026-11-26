@@ -467,6 +467,30 @@ bool touch_init()
 
 }  // namespace
 
+bool board_speaker_enable(bool enable)
+{
+    if (s_ioe_addr == 0) {
+        return false;
+    }
+    // IO3: audio enable (powers ES8311), IO10: speaker PA.
+    ioe_set_output(2);
+    ioe_set_push_pull(2);
+    ioe_set_level(2, 1);
+    ioe_set_output(9);
+    ioe_set_push_pull(9);
+    ioe_set_level(9, enable ? 1 : 0);
+    gpio_config_t config = {};
+    config.pin_bit_mask = 1ULL << 14;
+    config.mode = GPIO_MODE_OUTPUT;
+    config.pull_up_en = GPIO_PULLUP_DISABLE;
+    config.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    config.intr_type = GPIO_INTR_DISABLE;
+    gpio_config(&config);
+    gpio_set_level(GPIO_NUM_14, enable ? 1 : 0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    return true;
+}
+
 bool board_init()
 {
     if (!i2c_init()) {

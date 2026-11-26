@@ -7,6 +7,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include "audio.h"
 #include "ble_upload.h"
 #include "board.h"
 #include "imu.h"
@@ -41,6 +42,7 @@ extern "C" void app_main(void)
     nex::imu_service_init();
     nex::wallpaper_init();
     nex::reminders_init();
+    nex::audio_init();
     nex::ble_upload_init();
     nex_core_init();
     ESP_LOGI(TAG, "core ready: clock=%s source=%ld page=%ld", nex_core_clock_valid() ? "valid" : "invalid",

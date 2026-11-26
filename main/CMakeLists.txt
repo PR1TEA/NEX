@@ -3,6 +3,7 @@ idf_component_register(
     SRCS
         "main.cpp"
         "board.cpp"
+        "audio.cpp"
         "ble_upload.cpp"
         "imu.cpp"
         "reminders.cpp"
@@ -29,6 +30,8 @@ idf_component_register(
         spiffs
         bt
         json
+        espressif__esp_codec_dev
+        esp_driver_i2s
     PRIV_REQUIRES
         lvgl
         heap

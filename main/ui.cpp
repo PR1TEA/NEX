@@ -19,6 +19,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "audio.h"
 #include "ble_upload.h"
 #include "imu.h"
 #include "reminders.h"
@@ -48,7 +49,7 @@ namespace {
 
 constexpr const char *TAG = "NEX-UI";
 
-constexpr int kPageCount = 13;
+constexpr int kPageCount = 14;
 constexpr uint32_t kTickMs = 20;
 
 SemaphoreHandle_t s_lvgl_mutex = nullptr;
@@ -71,7 +72,7 @@ lv_obj_t *s_sw_time = nullptr;
 lv_obj_t *s_sw_state = nullptr;
 
 // App menu / level
-lv_obj_t *s_menu_rows[5] = {};
+lv_obj_t *s_menu_rows[6] = {};
 lv_obj_t *s_wallpaper = nullptr;
 int s_wall_gen = -1;
 lv_obj_t *s_phone_status = nullptr;
@@ -82,6 +83,15 @@ lv_obj_t *s_reminder_empty = nullptr;
 int s_reminder_gen = -1;
 int s_reminder_sel = -1;
 int s_reminder_count = -1;
+
+// Countdown timer
+lv_obj_t *s_timer_value = nullptr;
+lv_obj_t *s_timer_state = nullptr;
+int s_timer_duration_ms = 60000;
+int s_timer_remaining_ms = 60000;
+int64_t s_timer_end_ms = 0;
+bool s_timer_running = false;
+bool s_timer_alarm = false;
 lv_obj_t *s_att_canvas = nullptr;
 uint16_t *s_att_buf = nullptr;
 int s_att_theme = -1;
@@ -300,6 +310,8 @@ const char *page_title(int32_t page)
             return "手机连接";
         case NEX_PAGE_REMINDERS:
             return "提醒事项";
+        case NEX_PAGE_TIMER:
+            return "计时器";
         default:
             return page_name(page);
     }
@@ -602,12 +614,133 @@ void build_watchface()
 void build_menu()
 {
     lv_obj_t *page = s_pages[NEX_PAGE_MENU];
-    static const char *items[] = {"秒表", "姿态仪", "提醒事项", "设置", "返回表盘"};
-    for (int i = 0; i < 5; ++i) {
-        s_menu_rows[i] = make_row(page, 80 + i * 60, NEX_ACT_SELECT, i, items[i], 20);
+    static const char *items[] = {"秒表", "姿态仪", "提醒事项", "计时器", "设置", "返回表盘"};
+    for (int i = 0; i < 6; ++i) {
+        s_menu_rows[i] = make_row(page, 64 + i * 56, NEX_ACT_SELECT, i, items[i], 20);
         lv_obj_add_event_cb(s_menu_rows[i], row_event_cb, LV_EVENT_CLICKED,
                             reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_SELECT * 1000 + i)));
     }
+}
+
+void timer_update_label();
+
+void timer_start_stop()
+{
+    audio_alarm_stop();
+    s_timer_alarm = false;
+    if (s_timer_running) {
+        s_timer_remaining_ms = static_cast<int>(s_timer_end_ms - esp_timer_get_time() / 1000);
+        if (s_timer_remaining_ms < 0) {
+            s_timer_remaining_ms = 0;
+        }
+        s_timer_running = false;
+    } else {
+        if (s_timer_remaining_ms <= 0) {
+            s_timer_remaining_ms = s_timer_duration_ms;
+        }
+        s_timer_end_ms = esp_timer_get_time() / 1000 + s_timer_remaining_ms;
+        s_timer_running = true;
+    }
+    timer_update_label();
+}
+
+void timer_reset()
+{
+    audio_alarm_stop();
+    s_timer_alarm = false;
+    s_timer_running = false;
+    s_timer_remaining_ms = s_timer_duration_ms;
+    timer_update_label();
+}
+
+void timer_adjust(int delta_ms)
+{
+    int duration = s_timer_duration_ms + delta_ms;
+    if (duration < 60000) duration = 60000;
+    if (duration > 99 * 60000) duration = 99 * 60000;
+    s_timer_duration_ms = duration;
+    if (!s_timer_running) {
+        s_timer_remaining_ms = duration;
+    }
+    timer_update_label();
+}
+
+void timer_event_cb(lv_event_t *event)
+{
+    if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
+        return;
+    }
+    const int action = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    if (action == 0) timer_adjust(-60000);
+    else if (action == 1) timer_adjust(60000);
+    else if (action == 2) timer_start_stop();
+    else if (action == 3) timer_reset();
+}
+
+void timer_update_label()
+{
+    if (s_timer_value == nullptr) {
+        return;
+    }
+    const int seconds = (s_timer_remaining_ms + 999) / 1000;
+    char buffer[16];
+    std::snprintf(buffer, sizeof(buffer), "%02d:%02d", seconds / 60, seconds % 60);
+    set_text_if_changed(s_timer_value, buffer);
+    const char *state = s_timer_alarm ? "时间到" : (s_timer_running ? "运行中" : (s_timer_remaining_ms == s_timer_duration_ms ? "待开始" : "已暂停"));
+    set_text_if_changed(s_timer_state, state);
+}
+
+void build_timer()
+{
+    lv_obj_t *page = s_pages[NEX_PAGE_TIMER];
+
+    s_timer_value = lv_label_create(page);
+    lv_label_set_text(s_timer_value, "01:00");
+    lv_obj_set_style_text_font(s_timer_value, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(s_timer_value, lv_color_white(), 0);
+    lv_obj_align(s_timer_value, LV_ALIGN_CENTER, 0, -90);
+
+    s_timer_state = lv_label_create(page);
+    lv_label_set_text(s_timer_state, "待开始");
+    lv_obj_set_style_text_font(s_timer_state, &nex_cjk_16, 0);
+    lv_obj_set_style_text_color(s_timer_state, lv_color_hex(0x9A9AA2), 0);
+    lv_obj_align(s_timer_state, LV_ALIGN_CENTER, 0, -30);
+
+    auto add_button = [&](const char *text, int action, int x, int y, int width, int height) {
+        lv_obj_t *button = lv_button_create(page);
+        lv_obj_set_size(button, width, height);
+        lv_obj_align(button, LV_ALIGN_CENTER, x, y);
+        lv_obj_set_style_radius(button, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(button, lv_color_hex(0x141416), 0);
+        lv_obj_set_style_border_width(button, 1, 0);
+        lv_obj_set_style_border_color(button, lv_color_hex(0x3A3A40), 0);
+        lv_obj_add_event_cb(button, timer_event_cb, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(action)));
+        lv_obj_t *label = lv_label_create(button);
+        lv_label_set_text(label, text);
+        lv_obj_set_style_text_font(label, &nex_cjk_16, 0);
+        lv_obj_set_style_text_color(label, lv_color_white(), 0);
+        lv_obj_center(label);
+    };
+    add_button("-1分", 0, -100, 45, 120, 48);
+    add_button("+1分", 1, 100, 45, 120, 48);
+    add_button("开始/暂停", 2, 0, 130, 220, 58);
+    add_button("归零", 3, -95, 210, 140, 48);
+
+    lv_obj_t *back = lv_button_create(page);
+    lv_obj_set_size(back, 140, 48);
+    lv_obj_align(back, LV_ALIGN_CENTER, 95, 210);
+    lv_obj_set_style_radius(back, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(0x141416), 0);
+    lv_obj_set_style_border_width(back, 1, 0);
+    lv_obj_set_style_border_color(back, lv_color_hex(0x3A3A40), 0);
+    lv_obj_add_event_cb(back, row_event_cb, LV_EVENT_CLICKED,
+                        reinterpret_cast<void *>(static_cast<intptr_t>(NEX_ACT_BACK * 1000)));
+    lv_obj_t *back_label = lv_label_create(back);
+    lv_label_set_text(back_label, "返回");
+    lv_obj_set_style_text_font(back_label, &nex_cjk_16, 0);
+    lv_obj_set_style_text_color(back_label, lv_color_white(), 0);
+    lv_obj_center(back_label);
 }
 
 void build_stopwatch()
@@ -1166,7 +1299,7 @@ void refresh_watchface()
 void refresh_menu()
 {
     const int sel = nex_core_selection();
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
         style_row_selected(s_menu_rows[i], i == sel);
     }
 }
@@ -1203,6 +1336,22 @@ void refresh_gyro()
     s_bank_marker_pts[1].x = static_cast<lv_value_precise_t>(125 + std::sin(angle) * 106.0f);
     s_bank_marker_pts[1].y = static_cast<lv_value_precise_t>(125 - std::cos(angle) * 106.0f);
     lv_line_set_points(s_bank_marker, s_bank_marker_pts, 2);
+}
+
+void refresh_timer()
+{
+    if (!s_timer_running) {
+        return;
+    }
+    const int64_t now = esp_timer_get_time() / 1000;
+    s_timer_remaining_ms = static_cast<int>(s_timer_end_ms - now);
+    if (s_timer_remaining_ms <= 0) {
+        s_timer_remaining_ms = 0;
+        s_timer_running = false;
+        s_timer_alarm = true;
+        audio_alarm_start();
+    }
+    timer_update_label();
 }
 
 void refresh_stopwatch()
@@ -1463,6 +1612,9 @@ void refresh_page(int page)
         case NEX_PAGE_REMINDERS:
             refresh_reminders();
             break;
+        case NEX_PAGE_TIMER:
+            refresh_timer();
+            break;
         case NEX_PAGE_SETTINGS:
             refresh_settings();
             break;
@@ -1496,6 +1648,10 @@ void show_page(int page)
     }
     if (s_current_page == NEX_PAGE_PHONE && page != NEX_PAGE_PHONE) {
         ble_upload_advertise(false);
+    }
+    if (s_current_page == NEX_PAGE_TIMER && page != NEX_PAGE_TIMER) {
+        audio_alarm_stop();
+        s_timer_alarm = false;
     }
     for (int i = 0; i < kPageCount; ++i) {
         if (s_pages[i] != nullptr) {
@@ -1537,6 +1693,16 @@ void ui_task(void *arg)
         int32_t event = 0;
         bool dirty = false;
         while (xQueueReceive(s_key_queue, &event, 0) == pdTRUE) {
+            if (s_current_page == NEX_PAGE_TIMER && event == NEX_KEY_A_CLICK) {
+                timer_reset();
+                dirty = true;
+                continue;
+            }
+            if (s_current_page == NEX_PAGE_TIMER && event == NEX_KEY_B_CLICK) {
+                timer_start_stop();
+                dirty = true;
+                continue;
+            }
             if (event == NEX_KEY_BOTH_CLICK && s_current_page == NEX_PAGE_REMINDERS) {
                 reminders_toggle(nex_core_selection());
                 refresh_reminders();
@@ -1677,6 +1843,7 @@ bool ui_start()
     build_gyro();
     build_phone();
     build_reminders();
+    build_timer();
     build_settings();
     build_time_editor();
     build_system_info();
