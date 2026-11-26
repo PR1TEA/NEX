@@ -92,6 +92,8 @@ int s_timer_remaining_ms = 60000;
 int64_t s_timer_end_ms = 0;
 bool s_timer_running = false;
 bool s_timer_alarm = false;
+bool s_timer_finished = false;
+int64_t s_timer_alarm_deadline = 0;
 lv_obj_t *s_att_canvas = nullptr;
 uint16_t *s_att_buf = nullptr;
 int s_att_theme = -1;
@@ -623,9 +625,14 @@ void build_menu()
 }
 
 void timer_update_label();
+void timer_reset();
 
 void timer_start_stop()
 {
+    if (s_timer_alarm || s_timer_finished) {
+        timer_reset();
+        return;
+    }
     audio_alarm_stop();
     s_timer_alarm = false;
     if (s_timer_running) {
@@ -648,6 +655,7 @@ void timer_reset()
 {
     audio_alarm_stop();
     s_timer_alarm = false;
+    s_timer_finished = false;
     s_timer_running = false;
     s_timer_remaining_ms = s_timer_duration_ms;
     timer_update_label();
@@ -675,6 +683,9 @@ void timer_event_cb(lv_event_t *event)
     else if (action == 1) timer_adjust(60000);
     else if (action == 2) timer_start_stop();
     else if (action == 3) timer_reset();
+    else if (action == 4) {
+        timer_adjust(10000);
+    }
 }
 
 void timer_update_label()
@@ -686,7 +697,7 @@ void timer_update_label()
     char buffer[16];
     std::snprintf(buffer, sizeof(buffer), "%02d:%02d", seconds / 60, seconds % 60);
     set_text_if_changed(s_timer_value, buffer);
-    const char *state = s_timer_alarm ? "时间到" : (s_timer_running ? "运行中" : (s_timer_remaining_ms == s_timer_duration_ms ? "待开始" : "已暂停"));
+    const char *state = (s_timer_alarm || s_timer_finished) ? "时间到，按A键停止" : (s_timer_running ? "运行中" : (s_timer_remaining_ms == s_timer_duration_ms ? "待开始" : "已暂停"));
     set_text_if_changed(s_timer_state, state);
 }
 
@@ -698,13 +709,13 @@ void build_timer()
     lv_label_set_text(s_timer_value, "01:00");
     lv_obj_set_style_text_font(s_timer_value, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(s_timer_value, lv_color_white(), 0);
-    lv_obj_align(s_timer_value, LV_ALIGN_CENTER, 0, -90);
+    lv_obj_align(s_timer_value, LV_ALIGN_CENTER, 0, -80);
 
     s_timer_state = lv_label_create(page);
     lv_label_set_text(s_timer_state, "待开始");
     lv_obj_set_style_text_font(s_timer_state, &nex_cjk_16, 0);
     lv_obj_set_style_text_color(s_timer_state, lv_color_hex(0x9A9AA2), 0);
-    lv_obj_align(s_timer_state, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_align(s_timer_state, LV_ALIGN_CENTER, 0, -25);
 
     auto add_button = [&](const char *text, int action, int x, int y, int width, int height) {
         lv_obj_t *button = lv_button_create(page);
@@ -722,14 +733,14 @@ void build_timer()
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
         lv_obj_center(label);
     };
-    add_button("-1分", 0, -100, 45, 120, 48);
-    add_button("+1分", 1, 100, 45, 120, 48);
-    add_button("开始/暂停", 2, 0, 130, 220, 58);
-    add_button("归零", 3, -95, 210, 140, 48);
+    add_button("+10秒", 4, -80, 30, 110, 46);
+    add_button("+1分", 1, 80, 30, 110, 46);
+    add_button("开始/暂停", 2, 0, 100, 200, 54);
+    add_button("归零", 3, -65, 165, 110, 46);
 
     lv_obj_t *back = lv_button_create(page);
-    lv_obj_set_size(back, 140, 48);
-    lv_obj_align(back, LV_ALIGN_CENTER, 95, 210);
+    lv_obj_set_size(back, 110, 46);
+    lv_obj_align(back, LV_ALIGN_CENTER, 65, 165);
     lv_obj_set_style_radius(back, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(back, lv_color_hex(0x141416), 0);
     lv_obj_set_style_border_width(back, 1, 0);
@@ -1340,18 +1351,24 @@ void refresh_gyro()
 
 void refresh_timer()
 {
-    if (!s_timer_running) {
-        return;
-    }
     const int64_t now = esp_timer_get_time() / 1000;
-    s_timer_remaining_ms = static_cast<int>(s_timer_end_ms - now);
-    if (s_timer_remaining_ms <= 0) {
-        s_timer_remaining_ms = 0;
-        s_timer_running = false;
-        s_timer_alarm = true;
-        audio_alarm_start();
+    if (s_timer_running) {
+        s_timer_remaining_ms = static_cast<int>(s_timer_end_ms - now);
+        if (s_timer_remaining_ms <= 0) {
+            s_timer_remaining_ms = 0;
+            s_timer_running = false;
+            s_timer_finished = true;
+            s_timer_alarm = true;
+            s_timer_alarm_deadline = now + 10000;
+            audio_alarm_start();
+        }
+        timer_update_label();
     }
-    timer_update_label();
+    if (s_timer_alarm && now >= s_timer_alarm_deadline) {
+        audio_alarm_stop();
+        s_timer_alarm = false;
+        timer_update_label();
+    }
 }
 
 void refresh_stopwatch()
@@ -1693,6 +1710,12 @@ void ui_task(void *arg)
         int32_t event = 0;
         bool dirty = false;
         while (xQueueReceive(s_key_queue, &event, 0) == pdTRUE) {
+            if (s_current_page == NEX_PAGE_TIMER && s_timer_alarm &&
+                (event == NEX_KEY_A_CLICK || event == NEX_KEY_B_CLICK)) {
+                timer_reset();
+                dirty = true;
+                continue;
+            }
             if (s_current_page == NEX_PAGE_TIMER && event == NEX_KEY_A_CLICK) {
                 timer_reset();
                 dirty = true;
@@ -1735,6 +1758,9 @@ void ui_task(void *arg)
             }
             if (s_current_page == NEX_PAGE_PHONE) {
                 refresh_phone();
+            }
+            if (s_current_page == NEX_PAGE_TIMER) {
+                refresh_timer();
             }
             {
                 const int generation = wallpaper_generation();

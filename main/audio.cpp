@@ -48,7 +48,7 @@ void beep_task(void *)
             while (remaining > 0 && s_active) {
                 const int count = remaining < kChunkSamples ? remaining : kChunkSamples;
                 for (int i = 0; i < count; ++i) {
-                    buffer[i] = static_cast<int16_t>(std::sin(phase) * 9000.0f);
+                    buffer[i] = static_cast<int16_t>(std::sin(phase) * 20000.0f);
                     phase += step;
                     if (phase > kTwoPi) {
                         phase -= kTwoPi;
@@ -142,7 +142,7 @@ bool audio_init()
     sample.bits_per_sample = 16;
     sample.channel = 1;
     sample.sample_rate = kSampleRate;
-    esp_codec_dev_set_out_vol(s_dev, 75);
+    esp_codec_dev_set_out_vol(s_dev, 100);
     if (esp_codec_dev_open(s_dev, &sample) != ESP_OK) {
         ESP_LOGE(TAG, "codec open failed");
         return false;
