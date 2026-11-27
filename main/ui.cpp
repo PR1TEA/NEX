@@ -66,6 +66,10 @@ lv_obj_t *s_time_h = nullptr;
 lv_obj_t *s_time_m = nullptr;
 lv_obj_t *s_time_s = nullptr;
 lv_obj_t *s_time_invalid = nullptr;
+lv_obj_t *s_time_h_outline = nullptr;
+lv_obj_t *s_time_m_outline = nullptr;
+lv_obj_t *s_time_h_core = nullptr;
+lv_obj_t *s_time_m_core = nullptr;
 lv_point_precise_t s_wf_hour_pts[2] = {{230, 230}, {230, 120}};
 lv_point_precise_t s_wf_min_pts[2] = {{230, 230}, {230, 80}};
 lv_point_precise_t s_wf_tick_pts[60][2];
@@ -772,11 +776,18 @@ void build_watchface()
         s_wf_tick_pts[i][1] = {static_cast<lv_value_precise_t>(kCenter + std::cos(angle) * outer),
                                static_cast<lv_value_precise_t>(kCenter + std::sin(angle) * outer)};
 
+        lv_obj_t *outline = lv_line_create(dial);
+        lv_obj_set_pos(outline, 0, 0);
+        lv_line_set_points(outline, s_wf_tick_pts[i], 2);
+        lv_obj_set_style_line_width(outline, major ? 5 : 3, 0);
+        lv_obj_set_style_line_color(outline, lv_color_hex(0x101014), 0);
+        lv_obj_set_style_line_rounded(outline, true, 0);
+
         lv_obj_t *tick = lv_line_create(dial);
         lv_obj_set_pos(tick, 0, 0);
         lv_line_set_points(tick, s_wf_tick_pts[i], 2);
         lv_obj_set_style_line_width(tick, major ? 3 : 1, 0);
-        lv_obj_set_style_line_color(tick, lv_color_hex(major ? 0xFFFFFF : 0x666666), 0);
+        lv_obj_set_style_line_color(tick, lv_color_hex(major ? 0xFFFFFF : 0xD0D0D0), 0);
         lv_obj_set_style_line_rounded(tick, true, 0);
     }
 
@@ -789,8 +800,12 @@ void build_watchface()
         lv_obj_set_style_line_rounded(hand, true, 0);
         return hand;
     };
+    s_time_h_outline = make_hand(s_wf_hour_pts, 13, lv_color_hex(0x101014));
     s_time_h = make_hand(s_wf_hour_pts, 9, lv_color_white());
+    s_time_h_core = make_hand(s_wf_hour_pts, 2, lv_color_hex(0xFFB020));
+    s_time_m_outline = make_hand(s_wf_min_pts, 10, lv_color_hex(0x101014));
     s_time_m = make_hand(s_wf_min_pts, 6, lv_color_white());
+    s_time_m_core = make_hand(s_wf_min_pts, 2, lv_color_hex(0xFFB020));
 
     lv_obj_t *cap = lv_obj_create(dial);
     lv_obj_set_size(cap, 14, 14);
@@ -1462,8 +1477,12 @@ void refresh_watchface()
 
     const bool invalid = digits[0] == '-';
     if (invalid) {
+        lv_obj_add_flag(s_time_h_outline, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_time_h, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_time_h_core, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_time_m_outline, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_time_m, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_time_m_core, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(s_time_invalid, LV_OBJ_FLAG_HIDDEN);
         return;
     }
@@ -1474,8 +1493,12 @@ void refresh_watchface()
     }
     std::snprintf(last_hour_minute, sizeof(last_hour_minute), "%s", hour_minute);
 
+    lv_obj_remove_flag(s_time_h_outline, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_time_h, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(s_time_h_core, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(s_time_m_outline, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_time_m, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(s_time_m_core, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_time_invalid, LV_OBJ_FLAG_HIDDEN);
 
     const float hour = (digits[0] - '0') * 10 + (digits[1] - '0');
@@ -1493,6 +1516,10 @@ void refresh_watchface()
     };
     set_hand(s_wf_hour_pts, s_time_h, (hour + minute / 60.0f) * 30.0f, 105.0f);
     set_hand(s_wf_min_pts, s_time_m, minute * 6.0f, 150.0f);
+    lv_line_set_points(s_time_h_outline, s_wf_hour_pts, 2);
+    lv_line_set_points(s_time_h_core, s_wf_hour_pts, 2);
+    lv_line_set_points(s_time_m_outline, s_wf_min_pts, 2);
+    lv_line_set_points(s_time_m_core, s_wf_min_pts, 2);
 }
 
 void refresh_menu()
