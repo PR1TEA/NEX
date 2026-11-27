@@ -593,7 +593,7 @@ int jpeg_out(JDEC *, void *bitmap, JRECT *rect)
             const uint8_t r = line[x * 3 + 0];
             const uint8_t g = line[x * 3 + 1];
             const uint8_t b = line[x * 3 + 2];
-            dst[x] = static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+            dst[x] = static_cast<uint16_t>(((b & 0xF8) << 8) | ((g & 0xFC) << 3) | (r >> 3));
         }
     }
     return 1;
