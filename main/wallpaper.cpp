@@ -93,17 +93,6 @@ bool wallpaper_init()
         return false;
     }
     s_mounted = true;
-    FILE *probe = std::fopen(kFilePath, "rb");
-    if (probe != nullptr) {
-        std::fseek(probe, 0, SEEK_END);
-        const long size = std::ftell(probe);
-        std::fseek(probe, 0, SEEK_SET);
-        uint8_t head[4] = {};
-        const size_t got = std::fread(head, 1, sizeof(head), probe);
-        std::fclose(probe);
-        ESP_LOGI(TAG, "wallpaper size=%ld head=%02X %02X %02X %02X (%u)", size,
-                 head[0], head[1], head[2], head[3], (unsigned)got);
-    }
     ESP_LOGI(TAG, "storage mounted, wallpaper %s", wallpaper_exists() ? "present" : "absent");
     return true;
 }

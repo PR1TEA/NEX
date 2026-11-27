@@ -9,6 +9,7 @@
  */
 #include "ble_upload.h"
 
+#include <cstdlib>
 #include <cstring>
 
 #include "esp_heap_caps.h"
@@ -21,6 +22,7 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "nex_core.h"
 #include "reminders.h"
+#include "ui_work.h"
 #include "wallpaper.h"
 
 namespace nex {
@@ -59,6 +61,54 @@ bool s_receiving = false;
 uint8_t s_status = 0;
 bool s_want_advertising = false;
 uint8_t s_addr_type = BLE_OWN_ADDR_PUBLIC;
+
+struct ReminderJob {
+    char *json;
+    size_t length;
+    bool append;
+};
+
+struct TimeJob {
+    int year;
+    int month;
+    int day;
+    int hour;
+    int minute;
+    int second;
+    int tz;
+};
+
+struct WallpaperJob {
+    uint8_t *data;
+    size_t length;
+};
+
+void reminder_work(void *arg)
+{
+    auto *job = static_cast<ReminderJob *>(arg);
+    if (job->append) {
+        reminders_append_json(job->json, job->length);
+    } else {
+        reminders_set_json(job->json, job->length);
+    }
+    std::free(job->json);
+    std::free(job);
+}
+
+void time_work(void *arg)
+{
+    auto *job = static_cast<TimeJob *>(arg);
+    nex_core_set_time(job->year, job->month, job->day, job->hour, job->minute, job->second, job->tz);
+    std::free(job);
+}
+
+void wallpaper_work(void *arg)
+{
+    auto *job = static_cast<WallpaperJob *>(arg);
+    wallpaper_save(job->data, job->length);
+    std::free(job->data);
+    std::free(job);
+}
 
 void notify_rem_data(const uint8_t *data, uint16_t length)
 {
@@ -130,12 +180,26 @@ void handle_rem_control(struct ble_gatt_access_ctxt *ctxt)
     if (command[0] == 0x23) {
         bool ok = s_rem_buffer != nullptr && s_rem_offset == s_rem_length && s_rem_length > 0;
         if (ok) {
-            ok = s_rem_append
-                     ? reminders_append_json(reinterpret_cast<const char *>(s_rem_buffer), s_rem_length)
-                     : reminders_set_json(reinterpret_cast<const char *>(s_rem_buffer), s_rem_length);
+            auto *job = static_cast<ReminderJob *>(std::malloc(sizeof(ReminderJob)));
+            auto *copy = static_cast<char *>(std::malloc(s_rem_length));
+            if (job == nullptr || copy == nullptr) {
+                std::free(job);
+                std::free(copy);
+                ok = false;
+            } else {
+                std::memcpy(copy, s_rem_buffer, s_rem_length);
+                job->json = copy;
+                job->length = s_rem_length;
+                job->append = s_rem_append;
+                if (!ui_work_post(reminder_work, job)) {
+                    std::free(copy);
+                    std::free(job);
+                    ok = false;
+                }
+            }
         }
         s_rem_status = ok ? 2 : 3;
-        ESP_LOGI(TAG, "rem commit: %u/%u append=%d ok=%d", (unsigned)s_rem_offset,
+        ESP_LOGI(TAG, "rem commit queued: %u/%u append=%d ok=%d", (unsigned)s_rem_offset,
                  (unsigned)s_rem_length, s_rem_append ? 1 : 0, ok ? 1 : 0);
         if (s_rem_buffer != nullptr) {
             std::free(s_rem_buffer);
@@ -231,9 +295,16 @@ int gatt_access(uint16_t, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctx
         os_mbuf_copydata(ctxt->om, 0, sizeof(data), data);
         const int year = data[0] | (data[1] << 8);
         const int tz = static_cast<int16_t>(data[7] | (data[8] << 8));
-        const int rc = nex_core_set_time(year, data[2], data[3], data[4], data[5], data[6], tz);
-        ESP_LOGI(TAG, "time sync %04d-%02d-%02d %02d:%02d:%02d tz=%d rc=%d", year, data[2], data[3],
-                 data[4], data[5], data[6], tz, rc);
+        auto *job = static_cast<TimeJob *>(std::malloc(sizeof(TimeJob)));
+        if (job != nullptr) {
+            *job = {year, data[2], data[3], data[4], data[5], data[6], tz};
+            if (!ui_work_post(time_work, job)) {
+                std::free(job);
+            } else {
+                ESP_LOGI(TAG, "time sync queued %04d-%02d-%02d %02d:%02d:%02d tz=%d", year, data[2],
+                         data[3], data[4], data[5], data[6], tz);
+            }
+        }
         return 0;
     }
 

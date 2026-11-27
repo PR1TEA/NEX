@@ -23,6 +23,7 @@
 #include "ble_upload.h"
 #include "imu.h"
 #include "reminders.h"
+#include "ui_work.h"
 #include "wallpaper.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -92,6 +93,8 @@ lv_obj_t *s_reminder_empty = nullptr;
 int s_reminder_gen = -1;
 int s_reminder_sel = -1;
 int s_reminder_count = -1;
+lv_obj_t *s_reminder_rows[24] = {};
+lv_obj_t *s_reminder_labels[24] = {};
 
 // Countdown timer
 lv_obj_t *s_timer_value = nullptr;
@@ -582,8 +585,16 @@ int jpeg_out(JDEC *, void *bitmap, JRECT *rect)
     const int height = rect->bottom - rect->top + 1;
     const auto *src = static_cast<const uint8_t *>(bitmap);
     for (int y = 0; y < height; ++y) {
-        std::memcpy(s_wall_pixels + (rect->top + y) * s_wall_stride + rect->left * 3,
-                    src + y * width * 3, static_cast<size_t>(width) * 3);
+        auto *dst = reinterpret_cast<uint16_t *>(s_wall_pixels +
+                                                 (rect->top + y) * s_wall_stride) +
+                    rect->left;
+        const uint8_t *line = src + y * width * 3;
+        for (int x = 0; x < width; ++x) {
+            const uint8_t r = line[x * 3 + 0];
+            const uint8_t g = line[x * 3 + 1];
+            const uint8_t b = line[x * 3 + 2];
+            dst[x] = static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+        }
     }
     return 1;
 }
@@ -614,31 +625,35 @@ bool load_wallpaper_bitmap()
         std::free(data);
         return false;
     }
-    const size_t pixels = static_cast<size_t>(jd.width) * jd.height * 3;
+    const size_t pixels = static_cast<size_t>(jd.width) * jd.height * 2;
     auto *output = static_cast<uint8_t *>(std::malloc(pixels));
     if (output == nullptr) {
         std::free(data);
         return false;
     }
+    uint8_t *previous = s_wall_pixels;
     s_wall_pixels = output;
-    s_wall_stride = jd.width * 3;
+    s_wall_stride = jd.width * 2;
     rc = jd_decomp(&jd, jpeg_out, 0);
     std::free(data);
     if (rc != JDR_OK) {
         ESP_LOGW(TAG, "jpeg decode failed: %d", rc);
         std::free(output);
-        s_wall_pixels = nullptr;
+        s_wall_pixels = previous;
         return false;
     }
 
     std::memset(&s_wall_dsc, 0, sizeof(s_wall_dsc));
     s_wall_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
-    s_wall_dsc.header.cf = LV_COLOR_FORMAT_RGB888;
+    s_wall_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
     s_wall_dsc.header.w = jd.width;
     s_wall_dsc.header.h = jd.height;
-    s_wall_dsc.header.stride = jd.width * 3;
+    s_wall_dsc.header.stride = jd.width * 2;
     s_wall_dsc.data_size = pixels;
     s_wall_dsc.data = output;
+    if (previous != nullptr) {
+        std::free(previous);
+    }
     ESP_LOGI(TAG, "wallpaper decoded %ux%u", (unsigned)jd.width, (unsigned)jd.height);
     return true;
 }
@@ -690,6 +705,7 @@ void build_watchface()
     lv_obj_align(s_wallpaper, LV_ALIGN_CENTER, 0, 0);
     if (load_wallpaper_bitmap()) {
         lv_image_set_src(s_wallpaper, &s_wall_dsc);
+        s_wall_gen = wallpaper_generation();
     } else {
         lv_obj_add_flag(s_wallpaper, LV_OBJ_FLAG_HIDDEN);
     }
@@ -1089,8 +1105,6 @@ void build_phone()
     lv_obj_center(label);
 }
 
-void refresh_reminders();
-
 void refresh_reminders()
 {
     if (s_reminder_list == nullptr) {
@@ -1102,34 +1116,30 @@ void refresh_reminders()
     if (count == s_reminder_count && selection == s_reminder_sel && generation == s_reminder_gen) {
         return;
     }
+    const bool data_changed = generation != s_reminder_gen || count != s_reminder_count;
     s_reminder_count = count;
     s_reminder_sel = selection;
     s_reminder_gen = generation;
 
-    lv_obj_clean(s_reminder_list);
-    lv_obj_t *selected_row = nullptr;
-    for (int i = 0; i < count; ++i) {
-        const Reminder *item = reminders_get(i);
-        if (item == nullptr) {
-            break;
+    if (data_changed) {
+        for (int i = 0; i < 24; ++i) {
+            if (i < count) {
+                const Reminder *item = reminders_get(i);
+                lv_label_set_text(s_reminder_labels[i], item != nullptr ? item->text : "");
+                lv_obj_remove_flag(s_reminder_rows[i], LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(s_reminder_rows[i], LV_OBJ_FLAG_HIDDEN);
+            }
         }
-        lv_obj_t *row = lv_obj_create(s_reminder_list);
-        lv_obj_set_size(row, 400, 64);
-        lv_obj_set_pos(row, 10, i * 72);
-        lv_obj_set_style_radius(row, 32, 0);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x141416), 0);
-        lv_obj_set_style_border_width(row, i == selection ? 2 : 1, 0);
-        lv_obj_set_style_border_color(row, i == selection ? lv_color_white() : lv_color_hex(0x3A3A40), 0);
-        lv_obj_t *label = lv_label_create(row);
-        lv_label_set_text(label, item->text);
-        lv_obj_set_width(label, 350);
-        lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
-        lv_obj_set_style_text_font(label, &nex_cjk_text_16, 0);
-        lv_obj_set_style_text_color(label, lv_color_white(), 0);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 24, 0);
+    }
 
+    lv_obj_t *selected_row = nullptr;
+    for (int i = 0; i < count && i < 24; ++i) {
+        lv_obj_set_style_border_width(s_reminder_rows[i], i == selection ? 2 : 1, 0);
+        lv_obj_set_style_border_color(s_reminder_rows[i],
+                                      i == selection ? lv_color_white() : lv_color_hex(0x3A3A40), 0);
         if (i == selection) {
-            selected_row = row;
+            selected_row = s_reminder_rows[i];
         }
     }
     if (selected_row != nullptr) {
@@ -1155,6 +1165,27 @@ void build_reminders()
     lv_obj_set_style_pad_all(s_reminder_list, 0, 0);
     lv_obj_set_scroll_dir(s_reminder_list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_reminder_list, LV_SCROLLBAR_MODE_OFF);
+
+    for (int i = 0; i < 24; ++i) {
+        lv_obj_t *row = lv_obj_create(s_reminder_list);
+        lv_obj_set_size(row, 400, 64);
+        lv_obj_set_pos(row, 10, i * 72);
+        lv_obj_set_style_radius(row, 32, 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(0x141416), 0);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_set_style_border_color(row, lv_color_hex(0x3A3A40), 0);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_HIDDEN);
+
+        lv_obj_t *label = lv_label_create(row);
+        lv_label_set_text(label, "");
+        lv_obj_set_width(label, 350);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_font(label, &nex_cjk_text_16, 0);
+        lv_obj_set_style_text_color(label, lv_color_white(), 0);
+        lv_obj_align(label, LV_ALIGN_LEFT_MID, 24, 0);
+        s_reminder_rows[i] = row;
+        s_reminder_labels[i] = label;
+    }
 
     s_reminder_empty = lv_label_create(page);
     lv_label_set_text(s_reminder_empty, "暂无提醒，手机添加");
@@ -1865,7 +1896,7 @@ void ui_task(void *arg)
 
     while (true) {
         int32_t event = 0;
-        bool dirty = false;
+        bool dirty = ui_work_process() > 0;
         while (xQueueReceive(s_key_queue, &event, 0) == pdTRUE) {
             if (s_current_page == NEX_PAGE_TIMER && s_timer_alarm &&
                 (event == NEX_KEY_A_CLICK || event == NEX_KEY_B_CLICK)) {
@@ -1935,6 +1966,7 @@ void ui_task(void *arg)
                 const int generation = wallpaper_generation();
                 if (generation != s_wall_gen && s_wallpaper != nullptr) {
                     s_wall_gen = generation;
+                    lv_image_set_src(s_wallpaper, nullptr);
                     if (load_wallpaper_bitmap()) {
                         lv_image_set_src(s_wallpaper, &s_wall_dsc);
                         lv_obj_align(s_wallpaper, LV_ALIGN_CENTER, 0, 0);
@@ -2023,7 +2055,8 @@ bool ui_start()
     }
 
     s_lvgl_mutex = xSemaphoreCreateMutex();
-    s_key_queue = xQueueCreate(16, sizeof(int32_t));
+    s_key_queue = xQueueCreate(32, sizeof(int32_t));
+    ui_work_init();
     if (s_lvgl_mutex == nullptr || s_key_queue == nullptr) {
         ESP_LOGE(TAG, "UI synchronization objects failed");
         return false;
@@ -2040,6 +2073,12 @@ bool ui_start()
     build_reminders();
     build_timer();
     build_settings();
+    build_time_editor();
+    build_system_info();
+    build_developer();
+    build_input_diag();
+    build_apps();
+    build_app_runner();
     build_time_editor();
     build_system_info();
     build_developer();

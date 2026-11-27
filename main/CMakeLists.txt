@@ -10,6 +10,7 @@ idf_component_register(
         "services.cpp"
         "wallpaper.cpp"
         "ui.cpp"
+        "ui_work.cpp"
         "fonts/nex_cjk_16.c"
         "fonts/nex_cjk_text_16.c"
         "fonts/nex_cjk_20.c"
